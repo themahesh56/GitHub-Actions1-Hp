@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns:json-logger="http://www.mulesoft.org/schema/mule/json-logger"
+	xmlns:s3="http://www.mulesoft.org/schema/mule/s3"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:solace="http://www.mulesoft.org/schema/mule/solace" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/solace http://www.mulesoft.org/schema/mule/solace/current/mule-solace.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/json-logger http://www.mulesoft.org/schema/mule/json-logger/current/mule-json-logger.xsd
+http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd">
+
+	<error-handler name="common-error-handler-flow" doc:id="6e0dfa4d-cb92-4b4f-819b-a9663097576f">
+		<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="4a92283f-5fd7-4f2a-9741-2fdc2213454d" type="ANY">
+			<logger level="INFO" doc:name="error Logger" doc:id="1c3ae2cb-4a0f-4513-809e-2631a63c5cf8" message="entered error handling : #[error]" />
+			<choice doc:name="Choice - StatusCode" doc:id="f4fdab11-07ff-4cab-a07a-877ef67fa65a">
+					<when expression="#[error.muleMessage.attributes.StatusCode == 500]">
+						<logger level="INFO" doc:name="500 error" doc:id="7327cd1c-a3b4-4eab-9e22-a2c4cbd8aaf0" message="entered 500 error code" />
+						<ee:transform doc:name="set params Variable" doc:id="57ecde56-2f89-4e3b-ba01-ded8a5ebde9d">
+					<ee:message />
+					<ee:variables>
+						<ee:set-variable variableName="params"><![CDATA[%dw 2.0
+output application/json
+var cTime= (now() as String {format: "yyyy-MM-dd'T'HH:mm:ss"} >> "UTC") as DateTime  // {format: "yyyy-MM-dd'T'hh:mm:ss"}
+fun timeFormat(t) = ((t as String  ) replace  "T" with " ") replace "Z" with "" // Required format in Postgresql
+---
+{
+	start_time:  timeFormat(cTime),
+	end_time: timeFormat(cTime + ("PT" ++ (vars.ProjectDBdetails.mw_minutes[0] default p('downtime.default')) ++ "M")),
+	interface_name: vars.InterfaceName
+	//target_system: payload //splitBy ","
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+						<db:insert doc:name="Insert new downtime" doc:id="1627b8a7-867f-465c-a7ad-7d87128e5fed" config-ref="Database_Config">
+					<db:sql><![CDATA[insert into maintenance_window_control (interface_name, target_system, utc_start_time, utc_end_time, type)
+VALUES (:interface_name, :target_system, :utc_start_time, :utc_end_time,'unplanned');]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+	interface_name: vars.params.interface_name,
+	target_system: null,
+	utc_start_time: vars.params.start_time,
+	utc_end_time:  vars.params.end_time
+}]]]></db:input-parameters>
+				</db:insert>
+					</when>
+				
+</choice>
+			<flow-ref doc:name="error_logging_flow" doc:id="24f02822-8e9b-4f3d-a7bb-60a3ef0ddcbd" name="error_logging_flow" />
+			<logger level="INFO" doc:name="error handling done" doc:id="2a101d75-49d3-4b15-87d8-c35328432dc1" message="Error is handled  : #[error.description]" />
+		</on-error-continue>
+	
+</error-handler>
+	<sub-flow name="error_logging_flow" doc:id="7c8ae3d5-1fd9-4ca4-88a3-162c020ddebc" >
+		<ee:transform doc:name="Set Error Message Content" doc:id="57ff7e51-7977-467c-89ba-192f2293b72a">
+					<ee:message>
+					</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="errordata"><![CDATA[%dw 2.0
+import * from dw::core::Strings
+output application/json
+---
+{
+  "ID": substringBeforeLast(vars.fileName,'.csv') default (p('application.name') ++ "_" ++ (now() >> "UTC") as String {format:"ddMMYY_hhmm"}),
+  "appName": p('application.name'),
+  "sourceSystem": vars.ProjectDBdetails.source_systems[0],
+  "targetSystem": vars.ProjectDBdetails.target_systems[0],
+  "errorDescription": error.detailedDescription,
+  "errorType" : error.errorType.identifier,
+  "payload": {
+  	"FileName": vars.errorVars.FileName default "",
+  	"errorSource": vars.errorVars.errorSource default "",
+  	 "target_payload" : vars.errorVars.target_payload,
+  	 "id" :vars.errorVars.id
+  },
+  "statusCode": error.errorMessage.attributes.statusCode,
+  "errorDate": now() as LocalDateTime {format:"yyyy-MM-dd'T'HH:mm:ss"},
+  "correlationId": correlationId,
+  "to_list" : p('smtp.toAddress'),
+  "from_list" : p('smtp.fromAddress')
+ 
+}]]></ee:set-variable>
+				</ee:variables>
+				
+</ee:transform>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="6591a446-023c-4a57-b268-6a3a1bdc8194" >
+			<route >
+				<try doc:name="Try" doc:id="97cf9b3c-a90d-4789-850a-54bee07c635b" >
+					<db:update doc:name="error interface_logs" doc:id="bb9b3d2b-a666-42d2-b803-5a774e1cb8ec" config-ref="Database_Config" >
+						<db:sql ><![CDATA[update public.interface_logs
+	set status = :status,
+	exe_end_date = :end_time,
+	transaction_desc = :transaction_desc
+	where interface_name= :interface_name and file_name= :file_name
+	and id = :id]]></db:sql>
+						<db:input-parameters ><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+	interface_name : p("application.name"),
+	status : "error",
+	file_name : vars.errordata.payload.FileName,
+	end_time: (now()>>"CST") as DateTime as String {format: "yyyy-MM-dd HH:mm:ss"},
+	id : vars.errordata.payload.id,
+	transaction_desc : vars.flowstatus ++ " error :" ++ error.description
+}]]]></db:input-parameters>
+					</db:update>
+					<db:update doc:name="Update header" doc:id="fef82aa9-2102-4dee-895a-a9dec0372017" config-ref="Database_Config" >
+						<db:sql ><![CDATA[UPDATE public.interface_logs
+set status = 'error'
+where interface_name= :interface_name
+	and file_name = :file_name
+	and child = '0'
+and (SELECT  count(status) FROM public.interface_logs
+	where interface_name= :interface_name
+	and file_name = :file_name
+	and child = '1'
+	and status in ('error','in_progress','pending')) > 0]]></db:sql>
+						<db:input-parameters ><![CDATA[#[{
+	interface_name : vars.InterfaceName,
+	file_name : vars.FileName
+}]]]></db:input-parameters>
+					</db:update>
+					<error-handler >
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="5c9e0a27-dc74-441e-bb93-f35f23d452bc" type="ANY" >
+							<logger level="INFO" doc:name="Logger" doc:id="66a9516e-2da4-46a4-a68c-1c9764d3060b" message="**** interface_logs DB error **** and Error is #[payload]" />
+						</on-error-continue>
+					</error-handler>
+				</try>
+			</route>
+			<route >
+				<flow-ref doc:name="send-email-notification" doc:id="bf840d5c-04ad-402d-994a-50e41a9dcdfe" name="send-email-notification"/>
+			</route>
+		</scatter-gather>
+	</sub-flow>
+	<flow name="send-email-notification" doc:id="5f2d6d21-1ab5-4ce4-885c-1a2b758c5bb7" >
+		<ee:transform doc:name="Email Notification Payload" doc:id="04d6554e-485e-4d21-92d4-a8e3d7a6e58d" >
+			<ee:message >
+				<ee:set-payload resource="dw/common/email/payload-email_notification_payload.dwl" />
+			</ee:message>
+		</ee:transform>
+		<parse-template doc:name="Parse  HTML content" doc:id="00d0f126-28ba-4157-a2bb-9878e4236dc9" >
+			<content >&lt;html&gt;
+  &lt;head&gt;&lt;/head&gt;
+  &lt;body&gt;
+    &lt;p&gt;Please find the error report for application #[vars.queueErrMsg.appName] &lt;/p&gt;
+    &lt;br /&gt;
+  #[payload]
+&lt;br /&gt;&lt;br /&gt;
+&lt;p&gt;Regards,&lt;/p&gt;
+&lt;p&gt;Enterprise Integration Team&lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;</content>
+		</parse-template>
+		<logger level="INFO" doc:name="Logger" doc:id="900b9e48-2745-4fba-9708-779306f5d64a" message="#[&quot;Sending Email Notification To Notify Users About Error Details for Application ID&quot; : vars.errordata.'ID']"/>
+		<email:send doc:id="ea5bcebc-877b-4a60-9370-96bf08a200f4" config-ref="Email_SMTP" fromAddress='#[vars.errordata.from_list]' subject="#[&quot;[ ${mule.env} ]&quot;  ++ ' ' ++ &quot; Error has Occured in application &quot; ++ (vars.errordata.'appName' default &quot;&quot;)]" toAddresses='#[vars.errordata.to_list splitBy  ","]' doc:name="Send" >
+			<email:body contentType='#["text/html"]' />
+		</email:send>
+		<logger level="INFO" doc:name="Logger" doc:id="a20d4b4b-6588-4898-9e40-1d4ae6aa4901" message="#[&quot;Email Sent To Recipients &quot;: vars.errordata.to_list  ++ &quot; for Application ID: &quot; ++ vars.errordata.'ID']"/>
+		<error-handler>
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="71d3ae8e-3720-414b-abfd-eb2597c4803e" >
+				<logger level="INFO" doc:name="Logger" doc:id="754c9aee-beef-4425-8f4f-1aeaa9a7f426" message="*********error sending alert email**********"/>
+			</on-error-continue>
+		</error-handler>
+	</flow>
+
+</mule>

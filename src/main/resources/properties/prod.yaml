@@ -1,0 +1,67 @@
+S3 :   
+    BucketName: "hp-ei-mulesoft-s3-prd"
+    region: "us-west-2"
+    OrderSize: "950"
+    
+application:
+  name : "s3-s4-i041chase-orders"  
+  
+secretmanager:
+  url : "http://mule-aws-api/getsecret/prod-mule"
+  
+db:
+  URL: "jdbc:postgresql://mulesoft-anypoint-prod.cpv91pv9zsgp.us-west-2.rds.amazonaws.com:5432/mulesoft-anypoint-prod"
+  className: "org.postgresql.Driver"
+  user: "mulesoft-prod"
+  password: "![XcbbJV8W1fiMFlYMCQxqXQ==]"
+
+   
+solace:
+  ClientUserName: "hpeb-dev-muleapp-pub-user"
+  ClinetPassword: "![uiH2eW6/qAC/im/HqOnLeg==]"
+  VPN: "HPEB-DEV"
+  BrokerHost: "tcps://hpeb-non-pro-a.corp.hpicloud.net:55443,tcps://hpeb-non-pro-b.corp.hpicloud.net:55443"
+ 
+  
+mule:
+  env: "prod"
+  
+smtp:
+  host: 'smtp3.hp.com'
+  port: '25'
+  user: 'test'  
+  timeout: '15000'
+  read-timeout: '15000'
+  write-timeout: '15000'
+  toAddress: 'tejaswini.s2@hp.com'
+  fromAddress: 'no-reply-mulesoft-ipas@hp.com'
+  password: "![K4xwVjpuBso0AhB4UrIuwg==]"
+  reconnection:
+    frequency: '5000'
+    attempts: '5'
+    
+app:
+  port: "8081"
+  timeout: "300000"
+  basepath: "/s3-s4-i041chase-orders"
+  path: "/*"
+  pod-health-path: "/pod-health" 
+  
+  
+HttpRequest :
+  PO :
+    Path: "/RESTAdapter/PO/Mule"
+    Port: "443"
+    Host: "sappoplb.corp.hpicloud.net"
+    TrustStore: "certs\\prod\\POPLB_prod.jks"
+    TrustStorePassword : "![2elcpIl3/4rrdtRs2E3evg==]"
+    KeyStore: "certs\\prod\\mulesoft-anypoint-prod-apps.corp.hpicloud.net.pfx"
+    KeyStorePassword: "![queU4kwEhrR0SGDJdqzDeQ==]"
+    UserName: "PO_MULE_POP"
+    Password : "![KJpzeLLouAIV7tey6eTzug==]"
+    Url: "https://sappoplb.corp.hpicloud.net/RESTAdapter/PO/Mule/HHO"
+
+SAP:
+  RCVPOR : "\"SAPSVP\""
+  SNDPRN : "\"SVP500CHSE\"" 
+  RCVPRN :  "\"SVP500ALE\"" 

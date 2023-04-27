@@ -1,0 +1,951 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+	xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:solace="http://www.mulesoft.org/schema/mule/solace" xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:oauth="http://www.mulesoft.org/schema/mule/oauth" xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:json-logger="http://www.mulesoft.org/schema/mule/json-logger" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/json-logger http://www.mulesoft.org/schema/mule/json-logger/current/mule-json-logger.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/oauth http://www.mulesoft.org/schema/mule/oauth/current/mule-oauth.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/solace http://www.mulesoft.org/schema/mule/solace/current/mule-solace.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<flow name="main-templateFlow" doc:id="c41c323a-ba3b-469b-b15d-281fb1acc4a2">
+		<scheduler doc:name="Scheduler" doc:id="00cbe21c-82cc-4c2d-8719-4308983a476d" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="3" timeUnit="MINUTES"/>
+			</scheduling-strategy>
+		</scheduler>
+		<set-variable value="main-templateFlow in process" doc:name="flowstatus" doc:id="3921d57e-3088-4938-8cac-0e1b7bbd973a" variableName="flowstatus"/>
+		<flow-ref doc:name="start_process_flow" doc:id="44592247-4360-427a-b521-a7cd8ec3178c" name="start_process_flow" />
+		<error-handler ref="common-error-handler-flow" />
+		
+
+</flow>
+	<sub-flow name="start_process_flow" doc:id="bbac08c0-18b3-4428-bb20-6f14edf267dc" >
+		<set-variable value="start_process_flow in progress" doc:name="flowstatus" doc:id="9c74e6e4-1373-4d14-8bff-8b41b36618e8" variableName="flowstatus"/>
+		<set-variable value="${application.name}" doc:name="InterfaceName" doc:id="d51581eb-2c7a-4d15-b0d3-b73082c52656" variableName="InterfaceName" />
+		<db:select doc:name="interface_params table" doc:id="3250f520-5469-4858-b96b-e2c4cf4ffd52" config-ref="Database_Config" target="ProjectDBdetails">
+			<db:sql><![CDATA[SELECT * FROM public.interface_params where interface_name = :InterfaceName;]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	InterfaceName : vars.InterfaceName
+}]]]></db:input-parameters>
+		</db:select>
+		<flow-ref doc:name="maintenancewindow_check_flow" doc:id="13a0cf4d-0551-4125-b426-2b6d7c39e315" name="maintenancewindow_check_flow" />
+		<flow-ref doc:name="AWS_secretmanager_retrieve" doc:id="1dddf3d0-e664-4076-aa2a-dd194aaa8500" name="AWS_secretmanager_retrieve" />
+		<choice doc:name="MWStatus.downtime_found" doc:id="dfbfad49-28ef-4e60-b02f-20ba57761669" >
+			<when expression='#[vars.MWStatus.downtime_found != "true"]'>
+				<choice doc:name="Choice" doc:id="5ef8bea0-f1b2-4362-aa7d-35682bbfac60">
+					<when expression='#[vars.ProjectDBdetails.multi_transaction[0] == "1"]' >
+						<db:select doc:name="interface_logs" doc:id="f0bb08c1-2d2c-4588-8a7c-3a736b19a098" config-ref="Database_Config" target="selectdata">
+			<db:sql><![CDATA[select * from public.interface_logs
+	where interface_name= :InterfaceName
+	and status = :status
+	and child = :child]]></db:sql>
+			<db:input-parameters><![CDATA[#[%dw 2.0
+output application/json
+--- 
+{
+	status : "pending",
+	InterfaceName : vars.InterfaceName,
+	child : "1"
+}]]]></db:input-parameters>
+		</db:select>
+					</when>
+					<otherwise >
+						<db:select doc:name="interface_logs" doc:id="4504d4b4-be9d-489e-af52-3252ab359467" config-ref="Database_Config" target="selectdata">
+			<db:sql><![CDATA[select * from public.interface_logs
+	where interface_name= :InterfaceName
+	and status = :status
+	and child = :child]]></db:sql>
+			<db:input-parameters><![CDATA[#[%dw 2.0
+output application/json
+--- 
+{
+	status : "pending",
+	InterfaceName : vars.InterfaceName,
+	child : "0"
+}]]]></db:input-parameters>
+		</db:select>
+		</otherwise>
+				</choice>
+				<parallel-foreach doc:name="Parallel For Each" doc:id="9e51d6f7-ebf8-454a-895e-b72f5ea7b442" collection="#[vars.selectdata]">
+			<db:update doc:name="in_process status" doc:id="e322e775-6b8d-4d34-8e22-09777926e4bb" config-ref="Database_Config">
+				<db:sql><![CDATA[update public.interface_logs
+set status = :status
+where id = :id]]></db:sql>
+				<db:input-parameters><![CDATA[#[{
+	status : "in_progress",
+	id : payload.id
+}]]]></db:input-parameters>
+			</db:update>
+		</parallel-foreach>
+				<set-variable value="#[%dw 2.0&#10;output application/json&#10;---&#10;[]]" doc:name="file_name_acc" doc:id="0632041d-a13b-47a7-a081-5c0791df75d8" variableName="file_name_acc"/>
+				<choice doc:name="in_progress data exist" doc:id="6c76ff01-e42f-4d8d-b6d5-d0a98c6c20c6">
+			<when expression="#[sizeOf(vars.selectdata) &gt; 0]">
+				<foreach doc:name="For Each" doc:id="1fc0f309-a87a-49b9-b0b4-821a18fdf479" collection="#[vars.selectdata]">
+					<flow-ref doc:name="Flow Reference" doc:id="c7b02c05-a4ff-489f-8977-4b70b512dcc5" name="LineData_process" />
+				</foreach>
+			
+</when>
+		
+</choice>
+				<parallel-foreach doc:name="Parallel For Each" doc:id="5ec9e319-bad0-4913-b90d-3afb235a6503" collection="#[%dw 2.0&#10;output application/java&#10;---&#10;distinctBy(vars.file_name_acc, ((num, numIndex) -&gt; num))]">
+					<set-variable value="#[payload]" doc:name="FileName from acc" doc:id="7fee37b9-56b1-4f65-92b3-5d0dcbad63b9" variableName="FileName" />
+					<flow-ref doc:name="header_success_flow" doc:id="655b0ff4-bc57-4297-a3a9-1ee232715083" name="header_success_flow" />
+				</parallel-foreach>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="MW window check" doc:id="60ce0590-7ab8-4142-8b7c-e4c4fab174d1" message="Maintenance window found"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+	<flow name="LineData_process" doc:id="e3308538-8b61-4697-9d42-f6cdd0b70c2f">
+		<set-variable value="#[payload]" doc:name="LineData" doc:id="6e45b460-09ab-48d0-b736-f263d210076f" variableName="LineData" />
+		<ee:transform doc:name="errorVars and FileName" doc:id="8fc58562-de70-4a57-b02e-beae70d963f6" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="FileName" ><![CDATA[vars.LineData.file_name]]></ee:set-variable>
+				<ee:set-variable variableName="errorVars" ><![CDATA[%dw 2.0
+import remove from dw::core::Strings
+output application/json
+---
+{
+    errorId : uuid(),
+    FileName: vars.LineData.file_name,
+    errorSource : vars.ProjectDBdetails.interface_name[0],
+    errorCode :"",
+    target_payload : vars.LineData.file_name,
+    id : vars.LineData.id
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="file name acc" doc:id="f86f876d-814c-48b0-8902-3be75d8e740e" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="file_name_acc" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.file_name_acc + vars.FileName]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="file_process_flow" doc:id="7c95c49f-9a8e-45fa-8169-3aa7035d0517" name="file_process_flow" />
+		<error-handler ref="common-error-handler-flow" />
+	</flow>
+	<sub-flow name="file_process_flow" doc:id="454bf364-50c2-4c28-b06c-1409def85dbe">
+		<set-variable value="file_process_flow in progress" doc:name="flowstatus" doc:id="02d83940-42af-4b78-8120-8f08888ae1df" variableName="flowstatus"/>
+		<choice doc:name="Choice" doc:id="10f9bd59-b445-4dbb-9766-69b37e91ef54">
+					<when expression='#[vars.ProjectDBdetails.payload_save_type[0] == "s3"]'>
+						<flow-ref doc:name="business_logic_flow" doc:id="2b578618-e53a-4035-a71b-0408a3e48bfe" name="business_logic_flow" />
+					</when>
+					<otherwise>
+						<set-variable value="#[vars.LineData.target_payload]" doc:name="target_payload" doc:id="33181e2f-2f6d-4f45-8361-45de0011ee6b" variableName="target_payload" />
+					</otherwise>
+				</choice>
+		<set-variable value="Successfully processed" doc:name="flowstatus" doc:id="207c7b98-e96b-406d-8de6-af5aa3453a1d" variableName="flowstatus" />
+		<flow-ref doc:name="success_notification_flow" doc:id="2ab4c344-dead-4999-9c75-0e61e74a70ec" name="success_notification_flow" />
+		<logger level="INFO" doc:name="success log" doc:id="6850396a-27ba-4e6e-aa41-fa219a36bb29" message='#["completed the " ++ vars.InterfaceName ++ " at " ++ now()]' />
+	</sub-flow>
+	<sub-flow name="business_logic_flow" doc:id="f8a4eab8-06a0-475d-bfb2-98fb77e350a9">
+		<set-variable value="business_login_flow in process" doc:name="flowstatus" doc:id="4da948dc-d175-44da-899d-65a9fd76af66" variableName="flowstatus"/>
+		<logger level="INFO" doc:name="Logger" doc:id="eda6bb01-da4b-4b2c-9d19-d31fea9dbee7" message="#[vars.FileName]"/>
+		<ee:transform doc:name="processingfiledetails, text and csv" doc:id="2b6f6a53-69d8-4ecd-a41b-25955ba23949" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="ProcessingFile" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+    stext : (vars.FileName splitBy(","))[0],
+    sExpectedCSV : (vars.FileName splitBy(","))[1]
+} ]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="44e40b9d-47dc-4271-a000-5ec18cd41de9" >
+			<when expression='#[vars.ProcessingFile.stext startsWith("ACT")]'>
+				<flow-ref doc:name="i041ProcessFlow_820" doc:id="6a28b746-a370-4b84-bd5f-e43b2994b414" name="i041ProcessFlow_820" />
+			</when>
+			<when expression='#[vars.ProcessingFile.stext startsWith("PDE")]'>
+				<flow-ref doc:name="i041ProcessFlow_821" doc:id="32ff304d-8b6b-4e53-9751-f466ce440eff" name="i041ProcessFlow_821"/>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="0e66892b-3fd3-4f9d-860e-e856dca35d41" message="File name doest not start with either ACT or PDE. Cannot identify 820/821 flow"/>
+			</otherwise>
+		</choice>
+		<set-variable value='#["Orders of " ++ vars.FileName ++ " sent to S4"]' doc:name="Response" doc:id="347dd8a7-fa40-422d-919a-e965d03d03ac" variableName="Response"/>
+		<logger level="INFO" doc:name="response" doc:id="7b9d81ba-18cc-4839-b943-a64ed644b72a" message="response output : #[vars.Response]" />
+	</sub-flow>
+	<sub-flow name="i041ProcessFlow_820" doc:id="4e862483-027d-43fd-8cbb-35a24d82c4cd">
+		<set-variable value='#[import * from dw::core::Strings&#10;---&#10;replaceAll((substringAfterLast((substringBeforeLast(vars.ProcessingFile.stext, ".")), ".")),"_","")]' doc:name="Set Variable Docnum" doc:id="3c7cdd1e-f772-44e0-893b-b0841d0c76f5" variableName="DocNum" />
+		<logger level="INFO" doc:name="Logger" doc:id="a0165f8e-7689-46df-acf1-26a512c3c561" message="DocNum: #[vars.DocNum]" />
+		<scatter-gather doc:name="Scatter-Gather_ReadTextCsvData" doc:id="eaabcb77-90ce-45fd-802e-e3dc1247dd1b">
+			<route>
+				<logger level="INFO" doc:name="Logger" doc:id="c7e34f6f-a598-4625-a23f-e6296e22e963" message="Reading text file" />
+				<s3:get-object doc:name="S3 file read" doc:id="39723a2a-e7d7-4db0-b413-37489f6d88e0" config-ref="Amazon_S3_Configuration" bucketName="#[p('S3.BucketName') ++ &quot;/&quot; ++ (vars.ProjectDBdetails.polling_path[0] splitBy(&quot;,&quot;))[0]]" key="#[vars.ProcessingFile.stext]" outputMimeType='application/csv; header=false; bodystartlinenumber=2; separator=","' />
+				<ee:transform doc:name="Transform Message_text" doc:id="0b24e621-6659-4964-b7f8-9a0509caae08">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload filter(($.column_0 contains "RACT0010") or ($.column_0 contains "RFIN0011")
+	or ($.column_0 contains "HACT0010") or  ($.column_0 contains "HFIN0011")
+)]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="ChaseText"><![CDATA[%dw 2.0
+output application/json
+---
+payload filter(($.column_0 contains "RACT0010") or ($.column_0 contains "RFIN0011")
+	or ($.column_0 contains "HACT0010") or  ($.column_0 contains "HFIN0011")
+)]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</route>
+			<route>
+				<logger level="INFO" doc:name="Logger" doc:id="92944b42-2594-4058-b2ab-71856dffa507" message="Reading CSV file" />
+				<s3:get-object doc:name="S3 file read" doc:id="27b90e67-0a76-4951-9cd5-abdac2abb67f" config-ref="Amazon_S3_Configuration" bucketName="#[p('S3.BucketName') ++ &quot;/&quot; ++ (vars.ProjectDBdetails.polling_path[0] splitBy(&quot;,&quot;))[0]]" key="#[vars.ProcessingFile.sExpectedCSV]" outputMimeType="application/csv; bodystartlinenumber=2" />
+				<ee:transform doc:name="Transform Message_CSV" doc:id="1e8e7dd7-62bd-4bed-a226-3a6fe0f8c8cf">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map (ele, key) ->{
+    'HDR' : ele.HDR,
+    'H_number' : ele[1],
+    'hpi_hho_us' : ele.hpi_hho_us
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="ChaseCSV"><![CDATA[%dw 2.0
+output application/json
+---
+payload map (ele, key) ->{
+    'HDR' : ele.HDR,
+    'H_number' : ele[1],
+    'hpi_hho_us' : ele.hpi_hho_us
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</route>
+		</scatter-gather>
+		<logger level="INFO" doc:name="Logger" doc:id="72c76485-f4a7-42b3-b5cb-b2e2becc2c82" message='#[" Checking for RAC and RFN data in file " ++ vars.ProcessingFile.stext]'/>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="b255135e-50f6-4937-b00a-f8cdc55c4d21">
+			<route>
+				<flow-ref doc:name="RACTSendIdocFlow_820" doc:id="2a866fa5-25ef-4293-9c05-d36e377680c9" name="RACTSendIdocFlow_820" />
+			</route>
+			<route>
+				<flow-ref doc:name="RFINSendIdocFlow_820" doc:id="d4b0b668-061b-4ac9-8fe4-864b01c269ea" name="RFINSendIdocFlow_820" />
+			</route>
+		</scatter-gather>
+	</sub-flow>
+	<sub-flow name="RACTSendIdocFlow_820" doc:id="c9ef38b1-fedf-4ec7-9c4a-fe9f130faafb">
+		<ee:transform doc:name="Transform Message_Merge_textAndCsv_RACT0010" doc:id="bbe645d0-07c9-4f74-9076-eff2800e512e">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+fun graborder(transref) = {
+	(
+		vars.ChaseCSV[?($.hpi_hho_us == transref)]
+	)
+}
+
+var orderdate = (Column_1) -> ((Column_1  as Date {format: 'MM/dd/yyyy'} +|P1D|) as String {format: 'yyyyMMdd'}) as String {format: 'yyyyMMdd'}
+
+--- 
+vars.ChaseText  filter($.column_0 contains "RACT0010") map ((item,index)->
+	{
+	"column_0": item.column_0,
+    "column_1": item.column_1,
+    "column_2": item.column_2,
+    "column_3": item.column_3,
+    "column_4": item.column_4,
+    "column_5": item.column_5,
+    "column_6": item.column_6,
+    "column_7": item.column_7,
+    "column_8": item.column_8,
+    "column_9": item.column_9,
+    "column_10": item.column_10,
+    "column_11": item.column_11,
+    "column_12": item.column_12,
+    "column_13": item.column_13,    
+    "column_14": item.column_14,
+    "column_15": item.column_15,
+    "column_16": item.column_16,
+    "column_17": item.column_17,
+    "column_18": item.column_18,
+    "column_19": item.column_19,
+    "column_20": item.column_20,
+    "column_21": item.column_21,
+    "column_22": item.column_22,
+    "column_23": item.column_23,
+    "column_24": item.column_24,
+    "HDR": graborder(item.column_9).HDR,
+    "OrderId": graborder(item.column_9).H_number,
+    "hpi_hho_us": graborder(item.column_9).hpi_hho_us
+	}
+)]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="RACTHeader"><![CDATA[%dw 2.0
+output application/json
+--- 
+vars.ChaseText  filter($.column_0 contains "HACT0010") map ((item,index)->
+	{
+	"column_0": item.column_0,
+    "column_1": item.column_1,
+    "column_2": item.column_2,
+    "column_3": item.column_3,
+    "column_4": item.column_4,
+    "column_5": item.column_5,
+	}
+)]]></ee:set-variable>
+				<ee:set-variable variableName="S3Logger1"><![CDATA[%dw 2.0
+output application/json
+---
+"Received Payload" : payload]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<set-variable value="#[ceil(sizeOf(payload)/(${S3.OrderSize} +1))]" doc:name="Set Variable" doc:id="0f7ad568-deda-460e-855b-ebde6bb7d6e2" variableName="RACIdocCount" />
+		<logger level="INFO" doc:name="Logger" doc:id="b8f3c4c1-0d54-4701-83ec-14ea7505b79b" message="Sending RAC files to SAP PO" />
+		<logger level="INFO" doc:name="Logger idoc count" doc:id="d4aeb794-c390-491f-9568-c867101d6c46" message="RACT0010=#[sizeOf(payload)]  hearder=#[sizeOf(vars.RACTHeader)]  RAC idoc  count : #[vars.RACIdocCount]" />
+		<foreach doc:name="For Each" doc:id="920ec0c6-5e10-49ab-bcff-9e49635a4e34" collection="#[payload]" batchSize="951">
+			<ee:transform doc:name="Transform Message_BuildXML_RACT" doc:id="33177921-2d7e-454d-8b1a-4a59a1613506">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/xml
+
+import java!java::util::concurrent::atomic::AtomicInteger
+var counter = AtomicInteger::new(0)
+fun increment() = Java::invoke('java.util.concurrent.atomic.AtomicInteger', 'incrementAndGet()', counter, {})
+
+fun GetHKONT(strMOP)= strMOP match {
+	case MPO if(MPO=="VI") ->"0012031100"
+	case MPO if(MPO=="MC") ->"0012031200"
+	case MPO if(MPO=="AX") ->"0012031400"
+	case MPO if(MPO=="DI") ->"0012031300"
+	else -> "Received unexpected Method of Payment = " ++ strMOP
+}
+
+fun SumMontary(a: Array)= a reduce ((item, accumulator=0) -> accumulator + ((item.column_13)as String {format: "0.00"}))
+	
+
+---
+FIDCCP01:{
+	     IDOC @(BEGIN: "1"):
+	     {
+	     	EDI_DC40 @(SEGMENT: "1"): 
+	     	{
+	     		DOCNUM:vars.DocNum as String ++ (vars.counter-1) as String {format: "00"},
+	     		DIRECT:2,
+	     		IDOCTYP:"FIDCCP01",
+	     		MESTYP:"FIDCC2",
+	     		SNDPOR:"TRFC",
+	     		SNDPRT:"LS",
+	     		SNDPRN:${SAP.SNDPRN},
+	     		RCVPOR:${SAP.RCVPOR},
+	     		RCVPRT:"LS",
+	     		RCVPRN:${SAP.RCVPRN},
+	     		
+	     	},
+	     	E1FIKPF @(SEGMENT: "1"):vars.RACTHeader  map((value,index)->
+			{
+				BUKRS:"USCE",
+	     		BLART:"SA",
+	     		BLDAT:value.column_3 as Date {format: 'MM/dd/yyyy'} as String {format: 'yyyyMMdd'},
+	     		BUDAT:now() as String {format: 'yyyyMMdd'},
+	     		WWERT:now() as String {format: 'yyyyMMdd'},
+	     		TCODE:"FB01",
+	     		XBLNR:"Settle" ++ now() as String {format: 'yyyyMMdd'},
+	     		BKTXT:"credit card sett Chase",
+	     		WAERS:"USD",
+	     		GLVOR:"RFBU",
+	     		AWTYP:"BKPF",
+	     		HWAER:"USD" ,	     		
+	     		E1FISEG @(SEGMENT: "1") :payload filter($.column_0 contains "RACT0010") map((value2,index2)->
+	     		{
+	     			BUZEI:increment(),
+	     			BSCHL: if (value2.column_15 == "RF")(40)
+	     					else (50),
+	     			DMBTR:if (value2.column_15 == "RF")
+	     					(if (value2.column_13 <0) (-value2.column_13)as String {format: "0.00"}
+	     					else (value2.column_13)as String {format: "0.00"})
+	     				  else 
+	     					(if (value2.column_13 >0) (-value2.column_13)as String {format: "0.00"}
+	     					else (value2.column_13)),	
+	     			WRBTR:if (value2.column_15 == "RF")
+	     					(if (value2.column_13 <0) (-value2.column_13)as String {format: "0.00"}
+	     					else (value2.column_13 )as String {format: "0.00"})
+	     				  else 
+	     					(if (value2.column_13 >0) (-value2.column_13)as String {format: "0.00"}
+	     					else (value2.column_13)as String {format: "0.00"}),
+	     			
+	     			ZUONR:(value2.OrderId default "Undefined") as String,
+	     			VORGN:"RFBU",
+	     			HKONT :GetHKONT(value2.column_14),
+	     			RESERVE:value2.hpi_hho_us,
+	     				       			
+	     		   			
+	     		}),
+	     		E1FISEG @(SEGMENT: "1") :payload groupBy $.column_0  mapObject ((value, key, index) -> 
+	     		{
+	     			BUZEI:increment(),
+	     			BSCHL:if (SumMontary(value) < 0)(50)
+	     					else (40),
+	     			DMBTR:SumMontary(value),
+	     			WRBTR:SumMontary(value),
+	     			VORGN:"RFBU",
+	     			HKONT:"0010200100",
+	     		}) 
+	     		  
+	     			     			
+	     			
+	     	})
+	     }
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<http:request method="POST" doc:name="Request" doc:id="30513471-4add-41a6-b376-f34c8f5733f0" config-ref="HTTP_Request_configuration_PO" url="${HttpRequest.PO.Url}" target="ReqRAC" />
+		</foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="76521202-d7de-4705-9205-6b843588b05c" message="Sent iDoc for RAC to SAP PO" />
+	</sub-flow>
+	<sub-flow name="RFINSendIdocFlow_820" doc:id="cb7e4712-b888-4e6b-92ba-f56d85bef040">
+		<ee:transform doc:name="Transform Message_Merge_textAndCsv_RFIN0011" doc:id="d71f5c58-3f10-41e8-93da-6f18c2c829c3">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+fun graborder(transref) = {
+	(
+		vars.ChaseCSV[?($.hpi_hho_us == transref)]
+	)
+}
+
+--- 
+vars.ChaseText  filter($.column_0 contains "RFIN0011") map ((item,index)->
+	{
+	"column_0": item.column_0,
+    "column_1": item.column_1,
+    "column_2": item.column_2,
+    "column_3": item.column_3,
+    "column_4": item.column_4,
+    "column_5": item.column_5,
+    "column_6": item.column_6,
+    "column_7": item.column_7,
+    "column_8": item.column_8,
+    "column_9": item.column_9,
+    "column_10": item.column_10,
+    "column_11": item.column_11,
+    "column_12": item.column_12,
+    "column_13": item.column_13,    
+    "column_14": item.column_14,
+    "column_15": item.column_15,
+    "column_16": item.column_16,
+    "column_17": item.column_17,
+    "column_18": item.column_18,
+    "column_19": item.column_19,
+    "column_20": item.column_20,
+    "column_21": item.column_21,
+    "column_22": item.column_22,
+    "column_23": item.column_23,
+    "column_24": item.column_24,
+    "HDR": graborder(item.column_9).HDR,
+    "OrderId": null,
+    "hpi_hho_us": graborder(item.column_9).hpi_hho_us
+	}
+)]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="RFINHeader"><![CDATA[%dw 2.0
+output application/json
+--- 
+vars.ChaseText  filter($.column_0 contains "HFIN0011") map ((item,index)->
+	{
+	"column_0": item.column_0,
+    "column_1": item.column_1,
+    "column_2": item.column_2,
+    "column_3": item.column_3,
+    "column_4": item.column_4,
+    "column_5": item.column_5,
+	}
+)]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<set-variable value="#[ceil(sizeOf(payload)/${S3.OrderSize})]" doc:name="Set Variable idoc count" doc:id="c4499bbb-cca1-4347-8d15-b369dbd4a443" variableName="RFNidocCount" />
+		<logger level="INFO" doc:name="Logger idoc count" doc:id="423aac8f-4520-4090-a9fe-546ca3cd7a17" message="RFIN0011 = #[sizeOf(payload)]  header = #[sizeOf(vars.RFINHeader)]  RFN idoccount:   #[vars.RFNidocCount]" />
+		<logger level="INFO" doc:name="Logger" doc:id="cceea718-1815-465f-9204-c38456bbb255" message="sending RFN files to SAP PO" />
+		<foreach doc:name="For Each" doc:id="13354101-fc29-4843-bd24-a77f9d0b1881" collection="#[payload]" batchSize="${S3.OrderSize}">
+			<ee:transform doc:name="Transform Message_BuildXML_RFN" doc:id="8be83e30-05b7-4bcf-8a59-1cebe75a21e6">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/xml
+import * from dw::core::Strings
+fun SumMontary(a: Array)= a reduce ((item, accumulator=0) -> accumulator + ((item.column_17) as String {format: "0.00"}))
+
+import java!java::util::concurrent::atomic::AtomicInteger
+var counter = AtomicInteger::new(0)
+fun increment() = Java::invoke('java.util.concurrent.atomic.AtomicInteger', 'incrementAndGet()', counter, {})
+
+---
+FIDCCP01:{
+	     IDOC @(BEGIN: "1"):
+	     {
+	     	EDI_DC40 @(SEGMENT: "1"): 
+	     	{
+	     		DOCNUM:vars.DocNum as String ++ (vars.counter-1) as String {format: "00"},
+	     		DIRECT:2,
+	     		IDOCTYP:"FIDCCP01",
+	     		MESTYP:"FIDCC2",
+	     		SNDPOR:"TRFC",
+	     		SNDPRT:"LS",
+	     		SNDPRN:${SAP.SNDPRN},
+	     		RCVPOR:${SAP.RCVPOR},
+	     		RCVPRT:"LS",
+	     		RCVPRN:${SAP.RCVPRN},
+	     		
+	     	},
+	     	E1FIKPF @(SEGMENT: "1"):vars.RFINHeader  map((value,index)->
+			{
+				BUKRS:"USCE",
+	     		BLART:"SA",
+	     		BLDAT:value.column_3 as Date {format: 'MM/dd/yyyy'} as String {format: 'yyyyMMdd'},
+	     		BUDAT:now() as String {format: 'yyyyMMdd'},
+	     		WWERT:now() as String {format: 'yyyyMMdd'},
+	     		TCODE:"FB01",
+	     		XBLNR:"CBack" ++ now() as String {format: 'yyyyMMdd'},
+	     		BKTXT:"Chase CC Adjustment",
+	     		WAERS:"USD",
+	     		GLVOR:"RFBU",
+	     		AWTYP:"BKPF",
+	     		HWAER:"USD" ,
+	     		E1FISEG @(SEGMENT: "1") :payload groupBy $.column_0  mapObject ((value, key, index) -> 
+	     		{
+	     			BUZEI:increment(),
+	     			BSCHL:50,
+	     			DMBTR:SumMontary(value),
+	     			WRBTR:SumMontary(value),
+	     			VORGN:"RFBU",
+	     			HKONT:"0010200100",
+	     		}) , 
+	     		E1FISEG @(SEGMENT: "1") :payload filter($.column_0 contains "RFIN0011") map((value2,index2)->
+	     		{
+	     			BUZEI:increment(),	     			
+	     			BSCHL: if (value2.column_17 < 0) (40)
+	     				else (50),
+	     			DMBTR: (-value2.column_17) as String {format: "0.00"},
+	     			WRBTR:(-value2.column_17) as String {format: "0.00"},
+	     			ZUONR:(value2.column_9)as String  ++ " processing fees",
+	     			VORGN:"RFBU",
+	     			HKONT:"0046190200",
+	     			PRCTR:"CEP3701"	     			
+	     		})  
+	     			     			
+	     			
+	     	})
+	     }
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<http:request method="POST" doc:name="Request" doc:id="7642f4f5-412b-463b-847f-11629b1eb077" config-ref="HTTP_Request_configuration_PO" url="${HttpRequest.PO.Url}" target="ReqRFN" />
+		</foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="3a2cf11d-c658-4f70-b2c2-ab158c323815" message="Sent Idoc for RFIN to SAP PO" />
+	</sub-flow>
+	<sub-flow name="i041ProcessFlow_821" doc:id="b6d41829-1d01-4402-93ca-bc18bca8f335">
+		<set-variable value='#[import * from dw::core::Strings&#10;---&#10;replaceAll((substringAfterLast((substringBeforeLast(vars.ProcessingFile.stext, ".")), ".")),"_","")]' doc:name="Set Variable DocNum" doc:id="b6a829a2-e2f3-48cf-84ac-1dafe9272e9d" variableName="DocNum" />
+		<logger level="INFO" doc:name="Logger" doc:id="96ce8532-e30f-46dd-b80d-6338356bcb29" message="DocNUm: #[vars.DocNum]" />
+		<scatter-gather doc:name="Scatter-Gather_ReadTextCsvData" doc:id="7968367c-c96b-41e4-92be-4478e812e19b">
+			<route>
+				<logger level="INFO" doc:name="read Logger" doc:id="84bafbf3-75f8-4d38-9c0e-71495715f4ac" message="Reading text file" />
+				<s3:get-object doc:name="S3 file read" doc:id="47d19701-c0af-4296-850c-f2e4ace18d10" config-ref="Amazon_S3_Configuration" bucketName="#[p('S3.BucketName') ++ &quot;/&quot; ++ (vars.ProjectDBdetails.polling_path[0] splitBy(&quot;,&quot;))[1]]" key="#[vars.ProcessingFile.stext]" outputMimeType='application/csv; header=false; bodystartlinenumber=2; separator=","' />
+				<ee:transform doc:name="Transform Message_text" doc:id="09782d12-71e1-46d0-ae64-07e1f4f7fb1d">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload filter ( ($.column_0 contains "HPDE0017") or
+(($.column_0 contains "RPDE0017D") and (($.column_6=="RECD")or($.column_6=="REPR")or($.column_6=="PARREP")or($.column_6=="OPAACCEPT"))))]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="ChaseText"><![CDATA[%dw 2.0
+output application/json
+---
+payload filter ( ($.column_0 contains "HPDE0017") or
+(($.column_0 contains "RPDE0017D") and (($.column_6=="RECD")or($.column_6=="REPR")or($.column_6=="PARREP")or($.column_6=="OPAACCEPT"))))]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</route>
+			<route>
+				<logger level="INFO" doc:name="read Logger" doc:id="ee525fa5-3bcc-4722-bf81-bb0138c671ac" message="Reading csv file" />
+				<s3:get-object doc:name="S3 file read" doc:id="7946b69a-9b4e-4e8a-a911-426d210366a6" config-ref="Amazon_S3_Configuration" bucketName="#[p('S3.BucketName') ++ &quot;/&quot; ++ (vars.ProjectDBdetails.polling_path[0] splitBy(&quot;,&quot;))[1]]" key="#[vars.ProcessingFile.sExpectedCSV]" outputMimeType="application/csv; bodystartlinenumber=2" />
+				<ee:transform doc:name="Transform Message_CSV" doc:id="dfcbc444-4f95-4141-8745-8786ac34523b">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map (ele, key) ->{
+    'HDR' : ele.HDR,
+    'H_number' : ele[1],
+    'hpi_hho_us' : ele.hpi_hho_us
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="ChaseCSV"><![CDATA[%dw 2.0
+output application/json
+---
+payload map (ele, key) ->{
+    'HDR' : ele.HDR,
+    'H_number' : ele[1],
+    'hpi_hho_us' : ele.hpi_hho_us
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</route>
+		</scatter-gather>
+		<flow-ref doc:name="RPDESendIdocFlow_821" doc:id="323c911d-c1b4-47ba-b756-21d4c2510ce4" name="RPDESendIdocFlow_821" />
+	</sub-flow>
+	<sub-flow name="RPDESendIdocFlow_821" doc:id="faea49df-f42a-4131-9240-4795fff26895">
+		<ee:transform doc:name="Transform Message_Merge_textAndCsv" doc:id="3f453fb1-41d7-46d3-af5c-c2070219856f">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+fun graborder(transref) = {
+	(
+		vars.ChaseCSV[?($.hpi_hho_us == transref)]
+	)
+}
+
+var orderdate = (Column_14) -> ((Column_14  as Date {format: 'MM/dd/yyyy'} +|P1D|) as String {format: 'yyyyMMdd'}) as String {format: 'yyyyMMdd'}
+
+---
+vars.ChaseText  filter($.column_0 contains "RPDE0017D") map ((item,index)->
+	{
+	"column_0": item.column_0,
+    "column_1": item.column_1,
+    "column_2": item.column_2,
+    "column_3": item.column_3,
+    "column_4": item.column_4,
+    "column_5": item.column_5,
+    "column_6": item.column_6,
+    "column_7": item.column_7,
+    "column_8": item.column_8,
+    "column_9": item.column_9,
+    "column_10": item.column_10,
+    "column_11": item.column_11,
+    "column_12": item.column_12,
+    "column_13": item.column_13,    
+    "column_14": item.column_14,
+    "column_15": item.column_15,
+    "column_16": item.column_16,
+    "column_17": item.column_17,
+    "column_18": item.column_18,
+    "column_19": item.column_19,
+    "column_20": item.column_20,
+    "column_21": item.column_21,
+    "column_22": item.column_22,
+    "column_23": item.column_23,
+    "column_24": item.column_24,
+    "HDR": graborder(item.column_9).HDR,
+    "OrderId": graborder(item.column_9).H_number,
+    "hpi_hho_us": graborder(item.column_9).hpi_hho_us
+	}
+)]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="TextHeader"><![CDATA[%dw 2.0
+output application/json
+--- 
+vars.ChaseText  filter($.column_0 contains "HPDE0017") map ((item,index)->
+	{
+	"column_0": item.column_0,
+    "column_1": item.column_1,
+    "column_2": item.column_2,
+    "column_3": item.column_3,
+    "column_4": item.column_4,
+    "column_5": item.column_5,
+	}
+)]]></ee:set-variable>
+				<ee:set-variable variableName="S3Logger1"><![CDATA[%dw 2.0
+output application/json
+---
+"Received Payload" : payload]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="3097cb45-91a2-4396-995a-fbb8fc386776" message="Sucessfully merged the text and CSV file" />
+		<set-variable value="#[ceil(sizeOf(payload)/${S3.OrderSize})]" doc:name="Set Variable" doc:id="5311e990-cded-4f32-84d1-95c325571879" variableName="RPDEidocCount" />
+		<logger level="INFO" doc:name="Logger count" doc:id="303a19cb-8af5-48d9-83db-5b7df3c45045" message="Merged text and csv data : Size of merged payload  = #[sizeOf(payload)]   idoc count: #[vars.RPDEidocCount]" />
+		<logger level="INFO" doc:name="text logger" doc:id="e80c546a-22db-45e2-a574-05886d99a024" message="Grouping 950 records and  Sending files to SAP PO" />
+		<foreach doc:name="For Each" doc:id="4d999c64-0fd5-4700-a442-79d1a2071627" collection="#[payload]" batchSize="${S3.OrderSize}">
+			<ee:transform doc:name="Transform Message build Xml to Idoc for RPDE" doc:id="e23ceeb7-f559-4604-a04a-1200c7bac894">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/xml
+
+
+import java!java::util::concurrent::atomic::AtomicInteger
+var counter = AtomicInteger::new(0)
+fun increment() = Java::invoke('java.util.concurrent.atomic.AtomicInteger', 'incrementAndGet()', counter, {})
+
+fun SumMontary(a: Array)= a reduce ((item, accumulator=0) -> accumulator + 
+	(
+		if (((trim(item.column_15) as Number {format: "#.##"})<0) and (item.column_6 contains "RECD"))
+	     			(-abs(trim(item.column_15)  as Number {format: "#.##"}))
+	     			else if ((item.column_6=="PARREP")or(item.column_6=="REPR")or(item.column_6=="OPAACCEPT")or(item.column_6=="OPAREQ"))
+	     			(-abs(trim(item.column_15)  as Number {format: "#.##"}))
+	     			else
+	     			(abs(trim(item.column_15)  as Number {format: "#.##"}))
+	)
+)
+
+fun GetResaonCodeDesc(strMOP)= strMOP match {
+	case MPO if(MPO=="VI") ->"VisaCBRC"
+	case MPO if(MPO=="MC") ->"MasterCardCBRC"
+	case MPO if(MPO=="DI") ->"DiscoverCBRC"
+	else -> "Received unexpected Method of Payment = " ++ strMOP
+}
+
+fun GetSGTXT(ResaonCode,key)= ResaonCode match {
+	case RC if(RC=="MasterCardCBRC" and key=="02")->"Requested/Required Information Illegible or Missing"
+	  case RC if(RC=="MasterCardCBRC" and key=="02")->"Requested/Required Information Illegible or Missing"
+      case RC if(RC=="MasterCardCBRC" and key=="07")->"Warning Bulletin File</map:entry"
+      case RC if(RC=="MasterCardCBRC" and key=="08")->"Requested/Required Authorization Not Obtained"
+      case RC if(RC=="MasterCardCBRC" and key=="12")->"Account Number Not On File Obtained"
+      case RC if(RC=="MasterCardCBRC" and key=="31")->"Transaction Amount Differs</map:entry"
+      case RC if(RC=="MasterCardCBRC" and key=="34")->"Duplicate Processing"
+      case RC if(RC=="MasterCardCBRC" and key=="37")->"No Cardholder Authorization"
+      case RC if(RC=="MasterCardCBRC" and key=="40")->"Fraudulent Processing of Transactions"
+      case RC if(RC=="MasterCardCBRC" and key=="41")->"Cancelled Recurring Transaction"
+      case RC if(RC=="MasterCardCBRC" and key=="42")->"Late Presentment"
+      case RC if(RC=="MasterCardCBRC" and key=="46")->"Correct Currency Code Not Provided"
+      case RC if(RC=="MasterCardCBRC" and key=="49")->"Questionable Merchant Activity"
+      case RC if(RC=="MasterCardCBRC" and key=="53")->"Not As Described"
+      case RC if(RC=="MasterCardCBRC" and key=="54")->"Cardholder Dispute Not Elsewhere Classified"
+      case RC if(RC=="MasterCardCBRC" and key=="55")->"Goods or Services Not Provided"
+      case RC if(RC=="MasterCardCBRC" and key=="59")->"No-Show, Addendum, or ATM Dispute"
+      case RC if(RC=="MasterCardCBRC" and key=="60")->"Credit Not Processed"
+      case RC if(RC=="MasterCardCBRC" and key=="63")->"Cardholder Does Not Recognize Potential Fraud"
+      case RC if(RC=="MasterCardCBRC" and key=="70")->"Chip Liability Shift"
+      case RC if(RC=="MasterCardCBRC" and key=="71")->"Chip/PIN Liability Shift"
+
+      case RC if(RC=="VisaCBRC" and key=="13.1")->"Merchandise/Services Not Received"
+      case RC if(RC=="VisaCBRC" and key=="13.2")->"Cancelled Recurring Transaction"
+      case RC if(RC=="VisaCBRC" and key=="13.3")->"Not As Described or Defective Merchandise/Services"
+      case RC if(RC=="VisaCBRC" and key=="13.4")->"Counterfeit Merchandise"
+      case RC if(RC=="VisaCBRC" and key=="13.5")->"Misrepresentation"
+      case RC if(RC=="VisaCBRC" and key=="10.1")->"EMV Liability Shift Counterfeit Fraud"
+      case RC if(RC=="VisaCBRC" and key=="11.1")->"Card Recovery Bulletin"
+      case RC if(RC=="VisaCBRC" and key=="11.2")->"Declined Authorization"
+      case RC if(RC=="VisaCBRC" and key=="11.3")->"No Authorization"
+      case RC if(RC=="VisaCBRC" and key=="12.7")->"Invalid Data"
+      case RC if(RC=="VisaCBRC" and key=="12.2")->"Incorrect Transaction Code"
+      case RC if(RC=="VisaCBRC" and key=="12.3")->"Incorrect Currency"
+      case RC if(RC=="VisaCBRC" and key=="12.4")->"Incorrect Account Number"
+      case RC if(RC=="VisaCBRC" and key=="12.5")->"Incorrect Amount"
+      case RC if(RC=="VisaCBRC" and key=="10.3")->"Other Fraud - Card-Present Environment"
+      case RC if(RC=="VisaCBRC" and key=="10.2")->"EMV Liability Shift Non-Counterfeit Fraud"
+      case RC if(RC=="VisaCBRC" and key=="12.6")->"Duplicate Processing/Paid by Other Means"
+      case RC if(RC=="VisaCBRC" and key=="13.6")->"Credit Not Processed"
+      case RC if(RC=="VisaCBRC" and key=="13.7")->"Cancelled Merchandise/Services"
+      case RC if(RC=="VisaCBRC" and key=="12.6.1")->"Duplicate Processing"
+      case RC if(RC=="VisaCBRC" and key=="12.6.2")->"Paid by Other Means"
+      case RC if(RC=="VisaCBRC" and key=="30")->"Services Not Rendered or Merchandise Not Received"
+      case RC if(RC=="VisaCBRC" and key=="41")->"Cancelled Recurring Transaction"
+      case RC if(RC=="VisaCBRC" and key=="53")->"Not As Described or Defective Merchandise"
+      case RC if(RC=="VisaCBRC" and key=="57")->"Fraudulent Multiple Transactions"
+      case RC if(RC=="VisaCBRC" and key=="62")->"Counterfeit Transaction"
+      case RC if(RC=="VisaCBRC" and key=="70")->"Account Number on Exception File"
+      case RC if(RC=="VisaCBRC" and key=="71")->"Declined Authorization"
+      case RC if(RC=="VisaCBRC" and key=="72")->"No Authorization"
+      case RC if(RC=="VisaCBRC" and key=="73")->"Expired Card"
+      case RC if(RC=="VisaCBRC" and key=="74")->"Late Presentment"
+      case RC if(RC=="VisaCBRC" and key=="75")->"Cardholder Does Not Recognize Transaction"
+      case RC if(RC=="VisaCBRC" and key=="76")->"Incorrect Transaction Code"
+      case RC if(RC=="VisaCBRC" and key=="77")->"Non-Matching Account Number"
+      case RC if(RC=="VisaCBRC" and key=="78")->"Service Code Violation (International Only)"
+      case RC if(RC=="VisaCBRC" and key=="80")->"Incorrect Transaction Amount or Account Number"
+      case RC if(RC=="VisaCBRC" and key=="81")->"Fraudulent Transaction: Card Present Environment"
+      case RC if(RC=="VisaCBRC" and key=="82")->"Duplicate Processing"
+      case RC if(RC=="VisaCBRC" and key=="83")->"Fraudulent Transaction: Card Not Present Environment"
+      case RC if(RC=="VisaCBRC" and key=="85")->"Credit Not Processed"
+      case RC if(RC=="VisaCBRC" and key=="86")->"Paid By Other Means"
+      case RC if(RC=="VisaCBRC" and key=="90")->"Services Not Rendered ATM or Visa TravelMoney Program Transactions"
+      case RC if(RC=="VisaCBRC" and key=="93")->"Merchant Fraud Performance Program (International Only)"
+      
+      case RC if(RC=="DiscoverCBRC" and key=="AA")->"Cardholder Does not Recognize"
+      case RC if(RC=="DiscoverCBRC" and key=="AT")->"Authorization Non-Compliance"
+      case RC if(RC=="DiscoverCBRC" and key=="AP")->"Recurring Payments"
+      case RC if(RC=="DiscoverCBRC" and key=="AW")->"Transaction Amount Differs"
+      case RC if(RC=="DiscoverCBRC" and key=="CA")->"Cash Advance Dispute"
+      case RC if(RC=="DiscoverCBRC" and key=="CD")->"Credit Posted as a Card Sale"
+      case RC if(RC=="DiscoverCBRC" and key=="CR")->"Cancelled Reservation"
+      case RC if(RC=="DiscoverCBRC" and key=="DP")->"Duplicate Processing"
+      case RC if(RC=="DiscoverCBRC" and key=="IC")->"Illegible Transaction Documentation"
+      case RC if(RC=="DiscoverCBRC" and key=="IN")->"Invalid Card Number"
+      case RC if(RC=="DiscoverCBRC" and key=="IS")->"Missing Signature"
+      case RC if(RC=="DiscoverCBRC" and key=="LP")->"Late Presentation"
+      case RC if(RC=="DiscoverCBRC" and key=="NC")->"Not Classified"
+      case RC if(RC=="DiscoverCBRC" and key=="NR")->"Non-Response to Ticket Retrieval Request"
+      case RC if(RC=="DiscoverCBRC" and key=="RG")->"Non-Receipt of Goods or Services"
+      case RC if(RC=="DiscoverCBRC" and key=="RM")->"Cardholder Disputes Quality of Goods or Services"
+      case RC if(RC=="DiscoverCBRC" and key=="RN2")->"Credit not Processed"
+      case RC if(RC=="DiscoverCBRC" and key=="TF")->"Violation of Operating Regulations"
+      case RC if(RC=="DiscoverCBRC" and key=="U01")->"Fraud Card Present"
+      case RC if(RC=="DiscoverCBRC" and key=="U02")->"Fraud Card Not Present TXN"
+      case RC if(RC=="DiscoverCBRC" and key=="UNR")->"Fraud: Non-Response to Ticket Retrieval Request"
+      else -> ""
+}
+---
+{
+	FIDCCP01: {
+		IDOC @(BEGIN: "1"): {
+			EDI_DC40 @(SEGMENT: "1"): {
+				DOCNUM:vars.DocNum as String ++ (vars.counter-1) as String {format: "00"},
+	     		DIRECT:2,
+	     		IDOCTYP:"FIDCCP01",
+	     		MESTYP:"FIDCC2",
+	     		SNDPOR:"TRFC",
+	     		SNDPRT:"LS",
+	     		SNDPRN:${SAP.SNDPRN},
+	     		RCVPOR:${SAP.RCVPOR},
+	     		RCVPRT:"LS",
+	     		RCVPRN:${SAP.RCVPRN},
+			},
+			E1FIKPF @(SEGMENT: "1"):vars.TextHeader  map((value,index)-> {
+				BUKRS:"USCE",
+	     		BLART:"SA",
+	     		BLDAT:value.column_3 as Date {format: 'MM/dd/yyyy'} as String {format: 'yyyyMMdd'},
+	     		BUDAT:now() as String {format: 'yyyyMMdd'},
+	     		WWERT:now() as String {format: 'yyyyMMdd'},
+	     		TCODE:"FB01",
+	     		XBLNR:"CBack" ++ now() as String {format: 'yyyyMMdd'},
+	     		BKTXT:"Chase CC Adjustment",
+	     		WAERS:"USD",
+	     		GLVOR:"RFBU",
+	     		AWTYP:"BKPF",
+	     		HWAER:"USD" ,
+	     		
+	     		E1FISEG @(SEGMENT: "1"):payload filter(($.column_0 contains "RPDE0017D") and 
+					 (($.column_6=="PARREP")or($.column_6=="REPR")or($.column_6=="OPAACCEPT")or($.column_6=="OPAREQ") or ($.column_6 contains "RECD")))
+					  groupBy $.column_0  mapObject ((value, key, index) -> 
+	     		{
+	     			BUZEI:increment(),
+	     			BSCHL: if (SumMontary(value)< 0)(40)
+	     					else (50),
+	     			DMBTR:-SumMontary(value),
+	     			WRBTR:-SumMontary(value),
+	     			VORGN:"RFBU",
+	     			HKONT:"0010200100",
+	     		}) , 
+	     		
+				E1FISEG @(SEGMENT: "1"):payload filter(($.column_0 contains "RPDE0017D") and 
+					 (($.column_6=="PARREP")or($.column_6=="REPR")or($.column_6=="OPAACCEPT")or($.column_6=="OPAREQ") or ($.column_6 contains "RECD")))
+					  map((value2,index2)->
+	     		{
+	     			BUZEI:increment(),	     			
+	     			BSCHL: if (((trim(value2.column_15) as Number {format: "#.##"})<0) and (value2.column_6 contains "RECD")) (50)
+	     					 else if ((value2.column_6=="PARREP")or(value2.column_6=="REPR")or(value2.column_6=="OPAACCEPT")or(value2.column_6=="OPAREQ"))(50)
+	     					 else (40),
+	     			DMBTR:if (((trim(value2.column_15) as Number {format: "#.##"})<0) and (value2.column_6 contains "RECD"))
+	     			(-abs(trim(value2.column_15)  as Number {format: "#.##"}))
+	     			else if ((value2.column_6=="PARREP")or(value2.column_6=="REPR")or(value2.column_6=="OPAACCEPT")or(value2.column_6=="OPAREQ"))
+	     			(-abs(trim(value2.column_15)  as Number {format: "#.##"}))
+	     			else
+	     			(abs(trim(value2.column_15)  as Number {format: "#.##"})),
+	     			WRBTR:if (((trim(value2.column_15) as Number {format: "#.##"})<0) and (value2.column_6 contains "RECD"))
+	     			(-abs(trim(value2.column_15)  as Number {format: "#.##"}))
+	     			else if ((value2.column_6=="PARREP")or(value2.column_6=="REPR")or(value2.column_6=="OPAACCEPT")or(value2.column_6=="OPAREQ"))
+	     			(-abs(trim(value2.column_15)  as Number {format: "#.##"}))
+	     			else
+	     			(abs(trim(value2.column_15)  as Number {format: "#.##"})),
+	     			ZUONR:(value2.OrderId default "Undefined")as String  ++ "/" ++ value2.column_11 as String ,
+	     			SGTXT :GetSGTXT(GetResaonCodeDesc(value2.column_19),value2.column_11),
+	     			VORGN:"RFBU",
+	     			KOSTL:"CE001310",
+	     			HKONT:"0046100000",
+	     			RESERVE:value2.hpi_hho_us	     			
+	     		})  
+			})
+		}
+	}
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<http:request method="POST" doc:name="Request" doc:id="90d34dc8-c451-4af1-a606-7e27568c3c19" config-ref="HTTP_Request_configuration_PO" url="${HttpRequest.PO.Url}" target="Requestdata" />
+		</foreach>
+		<logger level="INFO" doc:name="Logger idoc sent" doc:id="031e3fcf-a471-496a-8d55-866d1346d2fa" message="Sent iDoc for RPDE to SAP PO" />
+	</sub-flow>
+	<sub-flow name="success_notification_flow" doc:id="9ca47227-eebb-4211-a041-a5548d950026">
+		<db:update doc:name="Update interface_logs" doc:id="f5337829-a39f-46ac-a660-92cd4454ebcf" config-ref="Database_Config">
+							<db:sql><![CDATA[update public.interface_logs
+	set status = :status, exe_end_date = :end_time, transaction_desc = :transaction_desc
+	where interface_name= interface_name
+	and file_name = :file_name
+	and id = :id
+	]]></db:sql>
+							<db:input-parameters><![CDATA[#[%dw 2.0
+import remove from dw::core::Strings
+output application/json
+var cTime= (now() as String {format: "yyyy-MM-dd'T'HH:mm:ss"} >> "UTC") as DateTime  // {format: "yyyy-MM-dd'T'hh:mm:ss"}
+fun timeFormat(t) = ((t as String  ) replace  "T" with " ") replace "Z" with "" // Required format in Postgresql
+---
+{
+	interface_name : vars.InterfaceName,
+	status : "success",
+	file_name : vars.FileName,
+	end_time:  timeFormat(cTime),
+	transaction_desc : vars.flowstatus ++ " response :" ++ vars.Response,
+	id : vars.LineData.id
+}]]]></db:input-parameters>
+						</db:update>
+	</sub-flow>
+	<sub-flow name="header_success_flow" doc:id="fcd1d91f-009e-41eb-8886-783f08b29fd6">
+		<choice doc:name="Choice" doc:id="cbaed134-ca7b-4c5f-a7f3-7368db07adfa">
+			<when expression='#[vars.ProjectDBdetails.multi_transaction[0] == "1"]'>
+				<db:update doc:name="header success" doc:id="bf237421-858c-434b-bcd1-7fea1e7788dd" config-ref="Database_Config">
+					<db:sql><![CDATA[UPDATE public.interface_logs
+set status = 'success'
+where interface_name= :interface_name
+	and file_name = :file_name
+	and child = '0'
+and (SELECT  count(status) FROM public.interface_logs
+	where interface_name= :interface_name
+	and file_name = :file_name
+	and child = '1'
+	and status in ('error','in_progress','pending')) = 0]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+	interface_name : vars.InterfaceName,
+	file_name : vars.FileName
+}]]]></db:input-parameters>
+				</db:update>
+				<db:update doc:name="header error" doc:id="f1d03405-2b60-439a-9d68-9e1b6cb0e6e5" config-ref="Database_Config">
+					<db:sql><![CDATA[UPDATE public.interface_logs
+set status = 'error'
+where interface_name= :interface_name
+	and file_name = :file_name
+	and child = '0'
+and (SELECT  count(status) FROM public.interface_logs
+	where interface_name= :interface_name
+	and file_name = :file_name
+	and child = '1'
+	and status in ('error','in_progress','pending')) > 0]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+	interface_name : vars.InterfaceName,
+	file_name : vars.FileName
+}]]]></db:input-parameters>
+				</db:update>
+				<logger level="INFO" doc:name="status update" doc:id="9284e2bf-a1c7-4f5d-bb34-63164bff59da" message="status update done for file #[vars.FileName] where id  is #[vars.LineData.id]" />
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="b58ccc05-7b6d-4ecf-bf86-ba2b3e2f9998" />
+			</otherwise>
+		</choice>
+	</sub-flow>
+</mule>

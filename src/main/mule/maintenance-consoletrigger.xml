@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<flow name="Maintenancetrigger_flow" doc:id="33735a60-165d-4ed2-8ff1-d27131efc6d5" >
+		<http:listener doc:name="Listener" doc:id="b5dd4e81-47ab-4134-b8da-4de27943dda7" config-ref="HTTP_Listener_config" path="${application.name}/maintenance"/>
+		<set-variable value="maintenancetrigger_flow in progress" doc:name="flowstatus" doc:id="289875e6-55dc-4143-815b-a0a6195c8730" variableName="flowstatus"/>
+		<flow-ref doc:name="Flow Reference start_process_flow" doc:id="8c8053f7-e7f5-4e03-b79d-5c97255a62f6" name="start_process_flow"/>
+	</flow>
+</mule>

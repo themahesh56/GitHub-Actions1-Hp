@@ -1,0 +1,440 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns:aws-secrets-manager-properties-override="http://www.mulesoft.org/schema/mule/aws-secrets-manager-properties-override"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:solace="http://www.mulesoft.org/schema/mule/solace" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties" xmlns:json-logger="http://www.mulesoft.org/schema/mule/json-logger" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/json-logger http://www.mulesoft.org/schema/mule/json-logger/current/mule-json-logger.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/solace http://www.mulesoft.org/schema/mule/solace/current/mule-solace.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/aws-secrets-manager-properties-override http://www.mulesoft.org/schema/mule/aws-secrets-manager-properties-override/current/mule-aws-secrets-manager-properties-override.xsd
+http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd">
+	<flow name="Wrrapper-Main-Flow" doc:id="1c55d709-89f5-455d-a341-95a15ad5d17f" maxConcurrency="50">
+		<scheduler doc:name="Scheduler" doc:id="004f9baa-1d33-4b24-ba5d-7c6f6ab02a52" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="10" timeUnit="MINUTES"/>
+			</scheduling-strategy>
+		</scheduler>
+		<set-variable value="Source wrapper in progress" doc:name="flowstatus" doc:id="56bac6d8-5131-482b-87d4-ba9b0c9001d4" variableName="flowstatus" />
+		<set-variable value="${application.name}" doc:name="InterfaceName" doc:id="1b99c4a7-68f3-4698-ad00-09265223dfc4" variableName="InterfaceName" />
+		<db:select doc:name="wrapper db table" doc:id="ce226678-eed7-4a63-a7a2-e4f32dfb74ac" config-ref="Database_Config">
+			<db:sql><![CDATA[select * from public.wrapper_src_control 
+	where  interface_name = :interface_name
+	and type = :type]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	interface_name : vars.InterfaceName,
+	"type" : "source"
+}]]]></db:input-parameters>
+		
+</db:select>
+		<flow-ref doc:name="AWS_secretmanager_retrieve" doc:id="45588318-3bfa-4aa1-ad85-0beeeec220be" name="AWS_secretmanager_retrieve"/>
+		<parallel-foreach doc:name="Parallel For Each" doc:id="29cf6ce9-efa3-42b6-a92b-09753a748d84" collection="#[payload]" maxConcurrency="5">
+			<set-variable value="#[payload]" doc:name="transferdetails" doc:id="b2706ad5-1b37-4980-9cdb-ae43fa5fc500" variableName="wrappercontrol" />
+			<flow-ref doc:name="source_choice_flow" doc:id="4ec5074c-847b-4cec-bbea-223df932c7dd" name="source_choice_flow" />
+
+		</parallel-foreach>
+	</flow>
+	<sub-flow name="source_choice_flow" doc:id="e7ebaf39-d93f-49e0-9720-adcd6442f7d9">
+		<choice doc:name="Choice" doc:id="ba34c10d-a610-4778-9eda-9ebe49cc83a6">
+			<when expression='#[vars.wrappercontrol.source_type == "sftp"]'>
+				<db:select doc:name="Select" doc:id="6eda9297-1c22-4b9a-856a-15703d3cb420" target="transferdetails" config-ref="Database_Config" targetValue="#[payload[0]]">
+					<db:sql ><![CDATA[select * from public.wrapper_src_sftp_params
+where  interface_name = :interface_name
+and type = :type]]></db:sql>
+					<db:input-parameters ><![CDATA[#[{
+	interface_name : vars.InterfaceName,
+	"type" : "source"
+}]]]></db:input-parameters>
+				</db:select>
+				<flow-ref doc:name="wrapper_sftp_flow" doc:id="46eaf398-f2bd-4492-9c69-9370c3ccd32e" name="wrapper_sftp_flow" />
+			
+</when>
+			<when expression='#[vars.wrappercontrol.source_type == "queue"]'>
+				<db:select doc:name="Select" doc:id="504a0eeb-d5b2-4d05-9044-3cc9b7edc46b" target="transferdetails" config-ref="Database_Config" targetValue="#[payload[0]]">
+					<db:sql><![CDATA[select * from  public.wrapper_src_queue_params
+where  interface_name = :interface_name
+and type = :type]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+	interface_name : vars.InterfaceName,
+	"type" : "source"
+}]]]></db:input-parameters>
+				</db:select>
+				<flow-ref doc:name="wrapper_queue_flow" doc:id="3b471819-02ac-4b42-9049-57a72e4a19e6" name="wrapper_queue_flow" />
+			
+</when>
+			<when expression='#[vars.wrappercontrol.source_type == "s3"]'>
+				<db:select doc:name="Select" doc:id="74ab7f02-e172-4e0c-a9ba-f003303ecfac" target="transferdetails" config-ref="Database_Config" targetValue="#[payload[0]]">
+					<db:sql><![CDATA[select * from public.wrapper_src_s3_params
+where  interface_name = :interface_name
+and type = :type]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+	interface_name : vars.InterfaceName,
+	"type" : "source"
+}]]]></db:input-parameters>
+				</db:select>
+				<flow-ref doc:name="wrapper_S3_flow" doc:id="3c997f8b-742c-4c8d-98d3-429d748b6a1d" name="wrapper_S3_flow" />
+			
+</when>
+			<otherwise>
+				<logger level="INFO" doc:name="source not defined" doc:id="62ec35dd-92ee-403d-a365-13159fc7085e" message="source type not defined" />
+			</otherwise>
+		</choice>
+	</sub-flow>
+	<sub-flow name="File_store_flow" doc:id="c4d16597-9598-4b82-bbb6-18b87365ab3e">
+<!-- [STUDIO:"Choice"]		<choice doc:name="Choice" doc:id="2785e604-4e80-4a83-b1df-bb0ed7d21262">
+					<when expression='#[vars.ProjectDBdetails.payload_save_type[0] == "s3"]'>
+						<try doc:name="Try" doc:id="f49243fb-c48d-409f-86e7-9bccb9dcf7a1">
+					<s3:create-object doc:name="Create S3 object" doc:id="af87ecde-912f-4ecd-889f-362796d3011d" bucketName="#[vars.bucket_name]" key="#[vars.FileName]" config-ref="Amazon_S3_Configuration_SMObjStore" contentType="application/csv">
+						<s3:object-content><![CDATA[#[vars.sourcedata]]]></s3:object-content>
+
+		</s3:create-object>
+					<error-handler>
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="f339287e-3e65-4d6f-956c-340ebf85700f">
+							<s3:create-object doc:name="Create  S3 object" doc:id="352ca4f6-0edf-45b0-8f8d-1283f19bb263" bucketName="#[vars.bucket_name]" key="#[vars.FileName]" config-ref="Amazon_S3_Configuration_AWSSM" contentType="application/csv">
+								<s3:object-content><![CDATA[#[vars.sourcedata]]]></s3:object-content>
+
+							</s3:create-object>
+						
+</on-error-continue>
+					</error-handler>
+				</try>
+					</when>
+				</choice> [STUDIO] -->
+		<flow-ref doc:name="Statusreport_flow" doc:id="f98fece6-b2d7-4c75-9027-4dc7c82b879c" name="Statusreport_flow" />
+	</sub-flow>
+	<sub-flow name="unique_file_flow" doc:id="7188bef6-0d41-4ec7-add7-b9ba8588c984">
+		<db:select doc:name="Select" doc:id="671a6aca-5c5c-4a94-ac0f-3b3c7f3a7167" config-ref="Database_Config" target="ProjectDBdetails">
+			<db:sql><![CDATA[select * from interface_params
+	where interface_name= :interface_name]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	interface_name : vars.InterfaceName
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="unique_file" doc:id="0d8ad3ee-f58f-40c8-8b75-51f631bc390e">
+			<when expression='#[vars.ProjectDBdetails.unique_file[0] == "0"]'>
+				<set-variable value="#[substringBeforeLast(vars.FileName, &quot;.&quot;) ++ &quot;_&quot; ++ (now() &gt;&gt; 'CST') as String {format:&quot;DDMMYYHHmmssSS&quot;} ++ substringAfterLast(vars.FileName, &quot;.&quot;)]" doc:name="update FileName" doc:id="860fc428-9261-4e89-9ab5-04629e97567f" variableName="FileName" />
+			</when>
+			<otherwise>
+				<set-variable value="#[vars.FileName]" doc:name="update FileName" doc:id="10183a28-b08d-4b2a-aeaa-05409e4506cd" variableName="FileName" />
+			</otherwise>
+		</choice>
+	</sub-flow>
+	<sub-flow name="AWS_secretmanager_retrieve" doc:id="73694723-520d-4067-8fa4-5fa564aa324c">
+		<http:request method="GET" doc:name="Request" doc:id="6ea00c0b-80ce-469a-be93-0b20c691f37e" outputMimeType="application/json" target="awsSecrets" url="${secretmanager.url}" config-ref="HTTP_Request_configuration"/>
+		<logger level="INFO" doc:name="Logger" doc:id="fcdf7116-5871-42bc-99bb-8251625e7cc6" message="awsSecrets = #[vars.awsSecrets]"/>
+	</sub-flow>
+	<sub-flow name="wrapper_S3_flow" doc:id="d329b427-66ca-46ce-9b18-c0921b0d0348">
+		<scatter-gather doc:name="Scatter-Gather" doc:id="44d03923-50b5-471a-8af0-218ecdbe0272">
+			<route>
+				<ee:transform doc:name="Transform Message" doc:id="f2474a53-6e85-4155-be3a-02dcf1566b46">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="source_folder_name"><![CDATA[(vars.transferdetails.source_folder_name splitBy(","))[0]]]></ee:set-variable>
+				<ee:set-variable variableName="source_file_format"><![CDATA[(vars.transferdetails.source_file_format splitBy(","))[0]]]></ee:set-variable>
+						<ee:set-variable variableName="archive_file_name" ><![CDATA[p('S3.BucketName') ++ "/s3-s4-i041chase-orders/820/archive"]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<s3:list-objects doc:name="List objects" doc:id="9d7dc81e-0762-4252-b6fe-53cd430b573d" config-ref="Amazon_S3_Configuration" bucketName="#[p('S3.BucketName')]" target="odxdata" prefix='#[vars.source_folder_name ++ "/" ++ vars.source_file_format]' />
+				<choice doc:name="Choice" doc:id="553fcc04-0eae-4109-9501-aee0f9a1c9a5" >
+					<when expression="#[vars.odxdata !=null]">
+						<flow-ref doc:name="multiple_file_check" doc:id="9293b681-1073-4df2-9030-b89f7fe60c8c" name="multiple_file_check" />
+					</when>
+				</choice>
+			</route>
+			<route>
+				<ee:transform doc:name="Transform Message" doc:id="d7dd9851-7ff0-4f2f-bed5-8695e0e74129">
+			<ee:message />
+			<ee:variables>
+				<ee:set-variable variableName="source_folder_name"><![CDATA[(vars.transferdetails.source_folder_name splitBy(","))[1]]]></ee:set-variable>
+				<ee:set-variable variableName="source_file_format"><![CDATA[(vars.transferdetails.source_file_format splitBy(","))[1]]]></ee:set-variable>
+						<ee:set-variable variableName="archive_file_name" ><![CDATA[p('S3.BucketName') ++ "/s3-s4-i041chase-orders/821/archive"]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<s3:list-objects doc:name="List objects" doc:id="9acc6410-3e54-426a-8a9e-1fc12a0820ad" config-ref="Amazon_S3_Configuration" bucketName="#[p('S3.BucketName')]" prefix='#[vars.source_folder_name ++ "/" ++ vars.source_file_format]' target="odxdata" />
+				<choice doc:name="Choice" doc:id="ab1f0951-84c1-4ad2-a1c1-3d9c7cd62aa2" >
+					<when expression="#[vars.odxdata !=null]">
+						<flow-ref doc:name="multiple_file_check" doc:id="f59d6e68-c47b-4b86-934c-e2bf83a1e13d" name="multiple_file_check" />
+					</when>
+				</choice>
+			</route>
+		</scatter-gather>
+	
+</sub-flow>
+	<sub-flow name="multiple_file_check" doc:id="36806d75-bd42-4230-a1e9-ac182d7588eb">
+		<choice doc:name="Choice" doc:id="bd7ed995-06c1-4f4f-9eca-34b5889876e9">
+					<when expression="#[sizeOf(vars.odxdata) &gt;= 1]">
+						<foreach doc:name="For Each" doc:id="60394ac8-ddcb-43a3-8c82-1de37986e66a" collection="#[vars.odxdata]">
+					<ee:transform doc:name="Transform Message for text and csv files- multiplefilecheck" doc:id="4218d269-b1db-41ca-a34b-6aa569957d37">
+						<ee:message>
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="multiplefilecheck"><![CDATA[%dw 2.0
+output application/json
+import * from dw::core::Strings
+---
+{
+	"stext":if (payload.key contains (".TXT"))(substringAfterLast(payload.key, "ready/")) 
+				else if (payload.key contains (".CSV")) (substringBeforeLast(substringAfterLast(payload.key, "ready/"), ".DECODE.CSV") ++ ".TXT") 
+				else "wrong file type",
+	"sExpectedCSV":if (payload.key contains (".TXT")) substringBeforeLast(substringAfterLast(payload.key, "ready/"), ".") ++ ".DECODE.CSV" 
+				else if (payload.key contains (".CSV")) (substringAfterLast(payload.key, "ready/")) 
+				else "wrong file type",
+	"btextAndCsv":if (payload.key contains (".TXT"))
+					(vars.odxdata.key contains (substringBeforeLast(payload.key, ".") ++ ".DECODE.CSV"))
+					else 
+					(vars.odxdata.key contains (substringBeforeLast(payload.key, ".DECODE.CSV") ++ ".TXT" default null)),
+	"btext":payload.key contains (".TXT"),
+	"sFileName": substringAfterLast(payload.key, "ready/")
+}]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<set-variable value='#[%dw 2.0&#10;output application/json&#10;import * from dw::core::Strings&#10;---&#10;(substringAfterLast(payload.key, "ready/"))]' doc:name="Set Variable" doc:id="fa5701e5-a78a-4fad-b263-442050646192" variableName="currentfile"/>
+					<choice doc:name="Choice_if_TextandCsvExist" doc:id="906d4dc4-d5bb-4e1d-b6c3-2e5782d8b01e">
+						<when expression="#[vars.multiplefilecheck.btextAndCsv==true and vars.multiplefilecheck.btext==true]">
+							<set-variable doc:name="FileName" doc:id="c0bea556-ebbe-43d8-bc32-55ae27e0c7b6" variableName="FileName" value='#[vars.multiplefilecheck.stext ++ "," ++ vars.multiplefilecheck.sExpectedCSV]' />
+							<flow-ref doc:name="Flow Reference unique_file_flow" doc:id="7b17a425-2062-4386-8475-7bac8a075bd6" name="unique_file_flow" />
+							<flow-ref doc:name="Flow Reference- File_store_flow" doc:id="ce91f707-9d1b-43a8-9300-2fb33b7e5971" name="File_store_flow" />
+						</when>
+						<when expression="#[vars.multiplefilecheck.btextAndCsv==false and vars.multiplefilecheck.btext==true]">
+							<s3:copy-object doc:name="archive" doc:id="8cdb9f64-99e8-4b4f-96bb-5fdd89d53456" config-ref="Amazon_S3_Configuration" sourceBucketName="#[p('S3.BucketName') ++ &quot;/&quot; ++ vars.source_folder_name]" sourceKey='#[vars.currentfile]' destinationBucketName="#[vars.archive_file_name]" destinationKey='#[vars.currentfile]' />
+							<s3:delete-object doc:name="Delete object" doc:id="2bed24f2-5113-479b-80b0-4273f6ee1cd7" config-ref="Amazon_S3_Configuration" bucketName="#[p('S3.BucketName') ++ &quot;/&quot; ++ vars.source_folder_name]" key="#[vars.currentfile]" />
+							<email:send doc:name="Send email" doc:id="efbf0965-161d-4435-b4f8-3743fc2f3114" config-ref="Email_SMTP" fromAddress="${smtp.fromAddress}" subject="#[&quot;Error in I041 Chase 821 flow date :&quot;++ now() as String {format: 'ddMMyyyy'} ++ &quot;File name: &quot; ++ vars.multiplefilecheck.stext]" toAddresses='#["${smtp.toAddress}" splitBy (",")]'>
+								<email:body>
+									<email:content><![CDATA[Error : No corresponding CSV file for text file received from S3 ]]></email:content>
+								</email:body>
+							</email:send>
+							<db:insert doc:name="interface_logs Db" doc:id="21c81fec-80fe-4600-bb4d-8df8c763aeac" config-ref="Database_Config" >
+								<db:sql ><![CDATA[insert into public.interface_logs (interface_name, status, file_name , exe_start_date ,transaction_desc, child, source, target)
+VALUES (:interface_name, :status, :file_name, :start_time, transaction_desc,:child, :source, :target);]]></db:sql>
+								<db:input-parameters ><![CDATA[#[%dw 2.0
+output application/json
+var cTime= (now() as String {format: "yyyy-MM-dd'T'HH:mm:ss"} >> "UTC") as DateTime  // {format: "yyyy-MM-dd'T'hh:mm:ss"}
+fun timeFormat(t) = ((t as String  ) replace  "T" with " ") replace "Z" with "" // Required format in Postgresql
+---
+{
+	id : 1,
+	interface_name : vars.InterfaceName,
+	status : "error",
+	file_name : vars.FileName,
+	start_time:  timeFormat(cTime),
+	transaction_desc: "csv file missing",
+	child: "0",
+	source: vars.ProjectDBdetails.source_systems[0],
+	target: vars.ProjectDBdetails.target_systems[0]
+}]]]></db:input-parameters>
+							</db:insert>
+						</when>
+						<when expression="#[vars.multiplefilecheck.btextAndCsv==false and vars.multiplefilecheck.btext==false]">
+							<s3:copy-object doc:name="archive" doc:id="02590ef6-a6fa-4468-9f3c-802888646393" config-ref="Amazon_S3_Configuration" sourceBucketName="#[p('S3.BucketName') ++ &quot;/&quot; ++ vars.source_folder_name]" sourceKey="#[vars.currentfile]" destinationBucketName="#[vars.archive_file_name]" destinationKey="#[vars.currentfile]" />
+							<s3:delete-object doc:name="Delete object" doc:id="abb85526-7f6f-488b-9b7f-e873cc4f7a60" config-ref="Amazon_S3_Configuration" bucketName="#[p('S3.BucketName') ++ &quot;/&quot; ++ vars.source_folder_name]" key="#[vars.currentfile]" />
+							<email:send doc:name="Send email" doc:id="69929d38-5c92-421f-b886-5b51ba5627a5" config-ref="Email_SMTP" fromAddress="${smtp.fromAddress}" subject="#[&quot;Error in I041 Chase 821 flow date :&quot;++ now() as String {format: 'ddMMyyyy'} ++ &quot;File name: &quot; ++ vars.multiplefilecheck.sExpectedCSV]" toAddresses='#["${smtp.toAddress}" splitBy (",")]'>
+								<email:body>
+									<email:content><![CDATA[Error : No corresponding text file for CSV file received from S3]]></email:content>
+								</email:body>
+							</email:send>
+							<db:insert doc:name="interface_logs Db" doc:id="a43ea8da-8cea-4580-be24-6744b3c0c5cf" config-ref="Database_Config" >
+								<db:sql ><![CDATA[insert into public.interface_logs (interface_name, status, file_name , exe_start_date ,transaction_desc, child, source, target)
+VALUES (:interface_name, :status, :file_name, :start_time, transaction_desc,:child, :source, :target);]]></db:sql>
+								<db:input-parameters ><![CDATA[#[%dw 2.0
+output application/json
+var cTime= (now() as String {format: "yyyy-MM-dd'T'HH:mm:ss"} >> "UTC") as DateTime  // {format: "yyyy-MM-dd'T'hh:mm:ss"}
+fun timeFormat(t) = ((t as String  ) replace  "T" with " ") replace "Z" with "" // Required format in Postgresql
+---
+{
+	id : 1,
+	interface_name : vars.InterfaceName,
+	status : "error",
+	file_name : vars.FileName,
+	start_time:  timeFormat(cTime),
+	transaction_desc: "txt file missing",
+	child: "0",
+	source: vars.ProjectDBdetails.source_systems[0],
+	target: vars.ProjectDBdetails.target_systems[0]
+}]]]></db:input-parameters>
+							</db:insert>
+						</when>
+						<otherwise>
+							<logger level="INFO" doc:name="Logger" doc:id="8a0bb809-6118-4be3-a886-b4c728e70998" message="Receied both CSV file and Text file" />
+						</otherwise>
+					</choice>
+						
+
+</foreach>
+					</when>
+				</choice>
+	</sub-flow>
+	<sub-flow name="wrapper_queue_flow" doc:id="b875f6b8-b03e-48c2-9c28-0564794bdc1a">
+		<solace:consume doc:name="Consume" doc:id="a47312ad-e98c-4d5e-a843-0047a983bf68" config-ref="Solace_PubSub__Connector_Config_EHFSubQueue" address="#[vars.transferdetails.queue_name]" target="sourcedata" ackMode="#[vars.transferdetails.ack_mode]" contentType="application\json" />
+		<logger level="INFO" doc:name="Logger" doc:id="9066a785-3ce4-462c-aee5-03a3fb343de6" message="sourcedata : #[vars.sourcedata]" />
+		<set-variable value="#[vars.transferdetails.queuefilename]" doc:name="FileName" doc:id="31227370-f355-4a14-9115-f0f4e495e4c1" variableName="FileName" />
+		<flow-ref doc:name="Flow Reference unique_file_flow" doc:id="9e3b5577-4905-46a7-814e-1355f4e14b64" name="unique_file_flow" />
+		<set-variable value="#[vars.transferdetails.bucket_name]" doc:name="Set Variable bucket_name" doc:id="27d8397e-79ad-46bd-8883-279a9baaf8ff" variableName="bucket_name" />
+		<flow-ref doc:name="Flow Reference File_store_flow" doc:id="283f5716-dccb-48bb-b0f1-99cfbfd876fa" name="File_store_flow" />
+	
+
+</sub-flow>
+	<sub-flow name="wrapper_sftp_flow" doc:id="45c29f2d-d5b5-48b2-8840-87f6696ad510">
+		<file:write doc:name="Write" doc:id="980b53ef-b7ca-432e-98bf-e1e4369e2620" path="${mule.home}/apps/${app.name}/$(vars.transferdetails.sm_certname)">
+			<file:content><![CDATA[#[%dw 2.0
+output application/java
+import * from dw::core::Binaries
+---
+fromBase64(p('aws-secrets::$(vars.transferdetails.sm_certname)'))]]]></file:content>
+		</file:write>
+		<sftp:list doc:name="List" doc:id="69af31ae-497e-4d9b-b1c3-ee94782ec847" config-ref="SFTP_Config" directoryPath="#[vars.transferdetails.directory_path]" target="sftpdata" />
+		<choice doc:name="Choice" doc:id="775f5615-9bf5-4b47-a9fa-a0c77452758d">
+			<when expression="#[sizeOf(vars.sftpdata) &gt;= 1]">
+				<foreach doc:name="For Each" doc:id="0fe77822-45ec-4de9-be9f-c1f7d52bae86" collection="#[vars.sftpdata.attributes]">
+					<set-variable value="#[payload.fileName]" doc:name="FileName" doc:id="fdd0abc6-80c4-4e86-bcb7-6d1cb08f6ff0" variableName="FileName" />
+					<flow-ref doc:name="Flow Reference unique_file_flow" doc:id="1de9cf14-86e9-4648-b8a8-c212373b829f" name="unique_file_flow"/>
+					<sftp:read doc:name="Read" doc:id="229e90fb-9573-44bc-93cc-e24c77551552" config-ref="SFTP_Config" path="#[payload.path]" target="sourcedata"/>
+					<logger level="INFO" doc:name="Logger" doc:id="b3661fcf-06b3-4489-857f-df7508552763" message="sourcedata = #[vars.sourcedata]"/>
+					<set-variable value="#[vars.transferdetails.bucket_name]" doc:name="Set Variable Bucket_name" doc:id="f687fb28-a767-4c44-abe3-96506814f161" variableName="Bucket_name"/>
+					<flow-ref doc:name="Flow Reference File_store_flow" doc:id="811bbf78-9e26-4329-b06a-f8e94e675a0b" name="File_store_flow"/>
+				
+</foreach>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="14aefd2a-cb69-4889-aef5-365dc389c4f3" message="default choise- no docs" />
+			</otherwise>
+		</choice>
+	</sub-flow>
+	<flow name="wrapper_https_Flow" doc:id="254b48b0-63d4-45f8-86ab-ace24e5ce1b8">
+		<http:listener doc:name="Listener" doc:id="4ff0e57d-33b6-4beb-9030-331dbb660ce7" config-ref="HTTP_Listener_config" path="wrapper-api/httpsfiletransfer"/>
+		<set-variable value="${application.name}" doc:name="InterfaceName" doc:id="d3e34f33-540b-4831-95af-67d7ef5ebee9" variableName="InterfaceName"/>
+		<choice doc:name="Choice" doc:id="e3344eb7-59c7-4652-bae8-08c08a0f32c2">
+			<when expression="#[attributes.headers.'content-type' contains &quot;multipart/form-data&quot;]">
+				<ee:transform doc:name="Transform Message" doc:id="600af3d0-6c58-42e4-992d-975060241607">
+					<ee:message />
+					<ee:variables>
+						<ee:set-variable variableName="receivedFileName"><![CDATA[%dw 2.0
+import * from dw::core::Strings
+output application/json
+---
+{
+S3object:substringAfterLast(payload.parts[0].headers."Content-Disposition".name,"filename=")
+}]]></ee:set-variable>
+						<ee:set-variable variableName="payloadToS3"><![CDATA[%dw 2.0
+output application/json
+---
+payload.parts[0].content]]></ee:set-variable>
+						<ee:set-variable variableName="S3payloadType"><![CDATA[%dw 2.0
+output text/plain
+---
+payload.parts[0].headers."Content-Type"]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<set-variable value="#[%dw 2.0&#10;output text/plain&#10;---&#10;write(vars.payloadToS3,vars.S3payloadType)]" doc:name="sourcedata" doc:id="6974c576-6ff1-4eb4-9e86-3c0ac2b5ec21" variableName="sourcedata"/>
+				<db:select doc:name="Select" doc:id="2a585463-3a94-420b-ad01-db080ef00975" config-ref="Database_Config">
+					<db:sql ><![CDATA[	select WC.interface_name, WC.source_type, 
+	HTTP.file_identifier, HTTP.bucket_name
+	from public.wrapper_src_control WC	
+	join public.wrapper_src_http_params HTTP
+	ON WC.source_type = 'https'
+	and WC.interface_name = HTTP.interface_name
+	where :Filename like '%' || HTTP.file_identifier || '%'
+	and  WC.interface_name = :interface_name
+	
+]]></db:sql>
+					<db:input-parameters ><![CDATA[#[{
+	Filename : vars.receivedFileName.S3object,
+	interface_name : vars.InterfaceName
+}]]]></db:input-parameters>
+				</db:select>
+				<foreach doc:name="For Each" doc:id="22aaa30c-cf75-4065-8bb9-5d31ff43a0a5" collection="#[payload]">
+					<set-variable value="#[payload]" doc:name="Set Variable" doc:id="d5a51918-3414-4362-a763-ab6399ccbcd9" variableName="transferdetails" />
+					<ee:transform doc:name="Transform Message" doc:id="142104b8-ab30-4130-8edf-0b0ceab6a557">
+					<ee:message />
+					<ee:variables>
+						<ee:set-variable variableName="fileIdentifier"><![CDATA[%dw 2.0
+output application/json
+fun fileType(fileName)= fileName match {
+case fn if(fn contains vars.transferdetails.file_identifier)-> vars.transferdetails.bucket_name
+else -> "Undefined file type"
+}
+---
+{
+	S3_folder:fileType(vars.receivedFileName.S3object)
+	}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+					<set-variable value="#[vars.receivedFileName.S3object]" doc:name="FileName" doc:id="51cf3b48-d0a2-4d14-b014-08bcedc507b9" variableName="FileName"/>
+					<set-variable value="#[vars.transferdetails.bucket_name]" doc:name="bucket_name" doc:id="84477a0b-0169-4943-8706-69e6eaf9fe55" variableName="bucket_name"/>
+					<flow-ref doc:name="File_store_flow" doc:id="611c0cd9-7f92-43db-ab77-b57cf8a54adc" name="File_store_flow"/>
+				
+</foreach>
+			
+</when>
+			<otherwise>
+				<set-variable value="#[attributes.queryParams.name]" doc:name="file_identity" doc:id="dc92bac0-7871-4760-90c2-e3abc3d59fa0" variableName="file_identity"/>
+				<set-variable value="#[payload]" doc:name="sourcedata" doc:id="e2862596-dd11-4d61-8aeb-9e5df666c671" variableName="sourcedata" />
+				<ee:transform doc:name="Transform Message" doc:id="7969032f-b816-445b-aec9-e8e376b9625d">
+					<ee:message />
+					<ee:variables>
+						<ee:set-variable variableName="receivedFileName"><![CDATA[%dw 2.0
+output application/json
+---
+{
+	S3object:if (attributes.headers.'content-type' contains "text/plain")(vars.file_identity ++ ".txt")
+	else if (attributes.headers.'content-type' contains "text/csv")(vars.file_identity ++ ".csv")
+	else if (attributes.headers.'content-type' contains "text/xml")(vars.file_identity ++ ".xml")
+	else if (attributes.headers.'content-type' contains "text/json")(vars.file_identity ++ ".json")
+	else if (attributes.headers.'content-type' contains "application/json")(vars.file_identity ++ ".json")
+	else if (attributes.headers.'content-type' contains "application/xml")(vars.file_identity ++ ".xml")
+	else if (attributes.headers.'content-type' contains "application/csv")(vars.file_identity ++ ".csv")
+	else(vars.file_identity ++ ".txt")
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<db:select doc:name="Select" doc:id="25e03589-a9bd-4d2d-9967-abce3cd8bff0" config-ref="Database_Config" >
+					<db:sql ><![CDATA[	select WC.interface_name, WC.source_type,	
+	HTTP.file_identifier, HTTP.bucket_name
+	from public.wrapper_src_control WC	
+	join public.wrapper_src_http_params HTTP
+	ON WC.source_type = 'https'
+	and WC.interface_name = HTTP.interface_name
+	where :Filename like '%' || HTTP.file_identifier || '%'
+	and WC.interface_name = :interface_name
+]]></db:sql>
+					<db:input-parameters ><![CDATA[#[{
+	Filename : vars.receivedFileName.S3object,
+	interface_name : vars.InterfaceName
+}]]]></db:input-parameters>
+				</db:select>
+				<foreach doc:name="For Each" doc:id="07cdb767-ed60-43c7-8e12-008530b647fc" collection="#[payload]" >
+					<set-variable value="#[payload]" doc:name="transferdetails" doc:id="eb51c5fc-75ad-4636-a797-3e1339033124" variableName="transferdetails" />
+					<ee:transform doc:name="Transform Message" doc:id="626f8910-f45f-40ba-ac8f-2836afc5d1d9" >
+						<ee:message />
+						<ee:variables >
+							<ee:set-variable variableName="fileIdentifier" ><![CDATA[%dw 2.0
+output application/json
+fun fileType(fileName)= fileName match {
+case fn if(fn contains vars.transferdetails.file_identifier)-> vars.transferdetails.bucket_name
+else -> "Undefined file type"
+}
+---
+{
+	S3_folder:fileType(vars.receivedFileName.S3object)
+	}]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<set-variable value="#[vars.receivedFileName.S3object]" doc:name="FileName" doc:id="260f5810-e1fd-4834-8b35-3dd5ee0d1946" variableName="FileName"/>
+					<flow-ref doc:name="unique_file_flow" doc:id="fa4fea6d-0816-41d3-ab0c-5ea59afb0f05" name="unique_file_flow"/>
+					<set-variable value="vars.FileName" doc:name="bucket_name" doc:id="879b09d2-6fdb-436d-b2b8-cda7e336d51b" variableName="bucket_name"/>
+					<flow-ref doc:name="File_store_flow" doc:id="7992c9a9-3d10-4a91-ae3e-163f735fec6f" name="File_store_flow"/>
+				
+</foreach>
+			
+</otherwise>
+		</choice>
+		<set-payload value="File loaded to Mule AWS S3 bucket" doc:name="Set Payload" doc:id="6ac90ae6-3dc5-464b-9fe1-ccc1d9493ae5" />
+	</flow>
+
+</mule>

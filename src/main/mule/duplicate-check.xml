@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+	<sub-flow name="DuplicateCheck_flow" doc:id="2cd2ff69-6c81-4d16-8ecc-64b459e6a16f" >
+		<set-variable value="Duplicate file check in progress" doc:name="flowstatus" doc:id="26232989-00d7-4b2f-936d-2cda67f8f017" variableName="flowstatus"/>
+		<choice doc:name="duplicate file check flag" doc:id="07b14325-d7f2-4bf0-be72-6694fd8d0e32">
+			<when expression='#[vars.ProjectDBdetails.dup_file_check[0] == "1"]'>
+				<db:select doc:name="status report with success" doc:id="547db231-5c40-4641-aeb2-b57082d86a98" config-ref="Database_Config" target="DuplicateCheckStatus">
+					<db:sql ><![CDATA[select * from public.interface_logs where interface_name = :interface_name
+and file_name=:file_name and status = :status
+and child = :child]]></db:sql>
+					<db:input-parameters ><![CDATA[#[%dw 2.0
+import * from dw::core::Strings
+output application/java
+---
+{
+	interface_name : vars.InterfaceName,
+	file_name :vars.FileName,
+	status : "success",
+	child : "0"
+	
+}]]]></db:input-parameters>
+				</db:select>
+			
+</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="c139aa02-6629-4381-b2a7-901f92964c4a" message="Logger-message: Duplicatefile check is disabled"/>
+			</otherwise>
+		
+</choice>
+	</sub-flow>
+</mule>

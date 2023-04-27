@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.connectors/mule-sockets-connector/1.2.0"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.connectors/mule-email-connector/1.7.1"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.modules/mule-module-file-extension-common/1.4.1"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.connectors/mule-sftp-connector/1.6.1"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.connectors/mule-objectstore-connector/1.2.1"/>
+	<classpathentry kind="con" path="MULE_LIB/com.mulesoft.connectors/mule-amazon-s3-connector/5.8.2"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.modules/mule-validation-module/2.0.2"/>
+	<classpathentry kind="con" path="MULE_LIB/com.mulesoft.modules/mule-secure-configuration-property-module/1.2.5"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.connectors/mule-db-connector/1.12.1"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.connectors/mule-file-connector/1.5.0"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.connectors/mule-http-connector/1.5.23"/>
+	<classpathentry kind="con" path="org.mule.tooling.MULE_PROJECT_LIB"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.modules/mule-oauth-module/1.1.19"/>
+	<classpathentry kind="con" path="MULE_LIB/org.mule.module/mule-java-module/1.2.5"/>
+	<classpathentry kind="con" path="MULE_LIB/com.solace.connector/solace-mulesoft-connector/1.1.0"/>
+	<classpathentry kind="con" path="MULE_LIB/cf23d9fc-d604-4c24-b05b-a6ad88f30f45/json-logger/2.0.1"/>
+	<classpathentry exported="true" kind="con" path="MULE_RUNTIME/org.mule.tooling.server.4.4.0.ee"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="src" path="src/main/mule"/>
+	<classpathentry kind="src" path="src/main/java"/>
+	<classpathentry kind="src" path="src/main/resources"/>
+	<classpathentry kind="src" output="target/test-classes" path="src/test/java"/>
+	<classpathentry kind="src" output="target/test-classes" path="src/test/resources"/>
+	<classpathentry kind="src" path="src/test/munit"/>
+	<classpathentry kind="output" path="target/classes"/>
+</classpath>

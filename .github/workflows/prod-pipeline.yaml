@@ -1,0 +1,68 @@
+# This workflow will build a MuleSoft project
+
+name: Prod Pipeline
+on:
+  push:
+    branches:
+    - "main-template"
+
+jobs:
+  build_deploy_prod:
+    if: "github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, 'Merge branch')"    
+    runs-on: [mulesoft-k8s-runners]
+    env:
+      ClientId: ${{ secrets.PROD_CLIENTID }}
+      ClientSecret: ${{ secrets.PROD_CLIENTSECRET }}
+      DEPLOY_ENV: "Prod"
+      TARGET_NAME: "mulesoft-anypoint-prod"
+      PUBLIC_URL: "-apps.corp.hpicloud.net"
+      CPU_RES: "100m"
+      CPU_LIMIT: "1500m"
+      MEM_RES: "1000Mi"
+      MEM_LIMIT: "2000Mi"
+      REPL_COUNT: "1"
+      ENFORCE_DEPLOY: "true"
+      PERSIST_OBJSTORE: "true"
+      PROP_ENV: "prod"
+      
+    steps:
+    - uses: actions/checkout@v2
+    - name: Update the environment name with version in pom file
+      run: |
+        current_version=$(sed -n '7s/.*<version>\([^<]*\)<\/version>.*/\1/p' pom.xml)        
+        env_ver=$(echo $current_version | sed 's/QA/PROD/g')
+        sed -i "7s/<version>.*<\/version>/<version>${env_ver}<\/version>/" pom.xml
+        git config --global user.email "actions@github.com"
+        git config --global user.name "GitHub Actions"
+        git commit -m "Update the environment name with version number ${env_ver}" pom.xml
+        git push
+    - name: Set up JDK 1.8
+      uses: actions/setup-java@v1
+      with:
+        java-version: 1.8
+    - name: MVN Build
+      run: |
+        mvn -B package --file pom.xml      
+        #mvn -B package -X --file pom.xml
+    - name: Stamp artifact file name with commit hash
+      run: |
+        artifactName1=$(ls target/*.jar | head -1)
+        commitHash=$(git rev-parse --short "$GITHUB_SHA")
+        artifactName2=$(ls target/*.jar | head -1 | sed "s/.jar/.$commitHash.jar/g")
+        mv $artifactName1 $artifactName2
+    - uses: actions/upload-artifact@master
+      with:
+          name: artifacts
+          path: target/*.jar
+    - uses: actions/download-artifact@master
+      with:
+        name: artifacts
+    - name: Deploy to Exchange
+      run: |
+       sudo cp settings.xml $HOME/.m2/settings.xml       
+       mvn -v
+       mvn --version
+       mvn clean deploy
+    - name: Publish to Anypoint Platform
+      run: |
+       mvn deploy -Denv=$PROP_ENV -DmuleDeploy

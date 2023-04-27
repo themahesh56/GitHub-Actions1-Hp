@@ -1,0 +1,67 @@
+S3 :   
+    BucketName: "mule-s3-dev"
+    region: "us-west-2"
+    OrderSize: "950"
+    
+application:
+  name : "s3-s4-i041Chase-orders"  
+  
+secretmanager:
+  url : "http://mule-aws-api/getsecret/dev-mule"
+  
+db:
+  #URL: "jdbc:postgresql://mulesoft-anypoint-dev.cpv91pv9zsgp.us-west-2.rds.amazonaws.com:5432/mulesoft-anypoint-dev"
+  URL: "jdbc:postgresql://mulesoft-anypoint-dev.cft6jwulo902.us-west-2.rds.amazonaws.com:5432/mulesoft-anypoint-dev"
+  className: "org.postgresql.Driver"
+  user: "mulesoft-dev"
+  password: "![qydfqBFuGjZswd488rz+FA==]"
+   
+solace:
+  ClientUserName: "hpeb-dev-muleapp-pub-user"
+  ClinetPassword: "![uiH2eW6/qAC/im/HqOnLeg==]"
+  VPN: "HPEB-DEV"
+  BrokerHost: "tcps://hpeb-non-pro-a.corp.hpicloud.net:55443,tcps://hpeb-non-pro-b.corp.hpicloud.net:55443"
+ 
+  
+mule:
+  env: "dev"
+  
+smtp:
+  host: 'smtp3.hp.com'
+  port: '25'
+  user: 'test'  
+  timeout: '15000'
+  read-timeout: '15000'
+  write-timeout: '15000'
+  toAddress: 'tejaswini.s2@hp.com'
+  fromAddress: 'no-reply-mulesoft-ipas@hp.com'
+  password: "![K4xwVjpuBso0AhB4UrIuwg==]"
+  reconnection:
+    frequency: '5000'
+    attempts: '5'
+    
+app:
+  port: "8081"
+  timeout: "300000"
+  basepath: "/s3-s4-i041chase-orders"
+  path: "/*"
+  pod-health-path: "/pod-health" 
+  
+  
+HttpRequest :
+  PO :
+    Path: "/RESTAdapter/PO/Mule"
+    Port: "443"
+    Host: "sapp9qlb.corp.hpicloud.net"
+    TrustStore: "certs\\dev\\client-truststore.jks"
+    TrustStorePassword: "![2elcpIl3/4rrdtRs2E3evg==]"
+    KeyStore: "certs\\dev\\mulesoft-anypoint-apps.corp.hpicloud.net.pfx"
+    KeyStorePassword: "![2elcpIl3/4rrdtRs2E3evg==]"
+    UserName: "PO_MULE_P9Q"
+    Password: "![xty12mxYjdbZW+s4N6pH0g==]"
+    Url: "https://sapp9qlb.corp.hpicloud.net/RESTAdapter/PO/Mule/HHO"
+
+SAP:
+  RCVPOR : "\"SAPSVQ\""
+  SNDPRN : "\"SVQ500CHSE\"" 
+  RCVPRN :  "\"SVQ500ALE\"" 

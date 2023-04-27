@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<sub-flow name="maintenancewindow_check_flow" doc:id="c4015be8-966d-40d5-b8b1-d94aa503a07d" >
+		<set-variable value="maintenancewindow_check_flow in progress" doc:name="flowstatus" doc:id="63282c3f-a78b-42a5-88f7-140c5579e32c" variableName="flowstatus"/>
+		<ee:transform doc:name="set inClauseParams variable" doc:id="a7d3a3dd-00a3-46e1-aa78-ba1d0211e775">
+			<ee:message />
+			<ee:variables>
+				<ee:set-variable variableName="InclauseParams"><![CDATA[%dw 2.0
+output application/java
+---
+vars.ProjectDBdetails.target_systems map "$" reduce ((item, accumulator) -> accumulator ++ ", " ++ item)]]></ee:set-variable>
+				<ee:set-variable resource="dwl/currentTime.dwl" variableName="cTime" />
+				<ee:set-variable variableName="dbInterfaceName"><![CDATA[%dw 2.0
+output application/java
+---
+vars.ProjectDBdetails.interface_name map "$" reduce ((item, accumulator) -> accumulator ++ ", " ++ item)]]></ee:set-variable>
+			
+</ee:variables>
+		</ee:transform>
+		<db:select doc:name="details corresponding to Interface and Target system" doc:id="9d5c3172-196e-401d-b662-44e1bef2da2d" config-ref="Database_Config">
+			<db:sql><![CDATA[#["select * from maintenance_window_control 
+where 
+(target_system = 'All')
+AND 
+(target_system IN ('$(vars.InclauseParams),'''))
+AND 
+(interface_name IN ('$(vars.dbInterfaceName)'))
+AND
+('$(vars.cTime)' BETWEEN utc_start_time AND utc_end_time)
+"]]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="Maintenance APi Response" doc:id="74998264-dcdb-4925-8879-6a3039e4661f">
+			<ee:message />
+			<ee:variables>
+				<ee:set-variable variableName="MWStatus"><![CDATA[%dw 2.0
+var down= if(isEmpty(payload) or (sizeOf(payload) < 1)) "false" else "true"
+output application/json
+---
+{
+	"downtime_found" : down,
+    "downtime_info":
+    if(down =="true")    
+        payload map ((item, index) -> 
+        {
+        "down_systems": item.target_system,
+        "downtime_start": item.utc_start_time,
+        "downtime_end": item.utc_end_time
+        })
+    else "No downtime found for received target_systems: " ++ (vars.ProjectDBdetails.*target_systems joinBy ", ")
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+	</sub-flow>
+</mule>
