@@ -4,7 +4,7 @@ name: Prod Pipeline
 on:
   push:
     branches:
-    - "main-template"
+    - "main"
 
 jobs:
   build_deploy_prod:
